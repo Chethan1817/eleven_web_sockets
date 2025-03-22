@@ -45,9 +45,9 @@ const OtpVerification: React.FC = () => {
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (otp.length !== 6) {
+    if (otp.length !== 4) {
       toast.error("Invalid OTP", {
-        description: "Please enter a valid 6-digit verification code.",
+        description: "Please enter a valid 4-digit verification code.",
       });
       return;
     }
@@ -99,19 +99,14 @@ const OtpVerification: React.FC = () => {
                 <InputOTP 
                   value={otp} 
                   onChange={handleOtpChange} 
-                  maxLength={6}
+                  maxLength={4}
                   className="gap-2"
                 >
                   <InputOTPGroup>
                     <InputOTPSlot index={0} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
                     <InputOTPSlot index={1} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
                     <InputOTPSlot index={2} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                  </InputOTPGroup>
-                  <InputOTPSeparator />
-                  <InputOTPGroup>
                     <InputOTPSlot index={3} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                    <InputOTPSlot index={4} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                    <InputOTPSlot index={5} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
                   </InputOTPGroup>
                 </InputOTP>
               </div>
@@ -120,7 +115,7 @@ const OtpVerification: React.FC = () => {
             <Button 
               type="submit" 
               className="w-full mt-4"
-              disabled={isLoading || otp.length < 6}
+              disabled={isLoading || otp.length < 4}
             >
               {isLoading ? (
                 <>
