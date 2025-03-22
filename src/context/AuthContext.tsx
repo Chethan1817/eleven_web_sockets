@@ -25,6 +25,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   register: (name: string, phone_number: string, country_code: string) => Promise<string>;
+  login: (phone_number: string, country_code: string) => Promise<string>;
   verifyOtp: (phone_number: string, request_id: string, otp: string) => Promise<boolean>;
   logout: () => void;
   accessToken: string | null;
@@ -121,6 +122,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // New login function that calls the login API endpoint
+  const login = async (phone_number: string, country_code: string): Promise<string> => {
+    console.log("Inside login function:", { phone_number, country_code });
+    try {
+      setIsLoading(true);
+      
+      // Make API call to the login endpoint
+      console.log("Making API call to login endpoint");
+      
+      const response = await fetch(`${API_BASE_URL}/users/login/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_number,
+          country_code
+        }),
+      });
+      
+      console.log("Login API response status:", response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Login failed");
+      }
+      
+      const data = await response.json();
+      console.log("Login API response:", data);
+      
+      // Update user state with the login info
+      setUser({ phone_number, country_code });
+      
+      sonnerToast.success("OTP Sent", {
+        description: `A verification code has been sent to +${country_code} ${phone_number}.`,
+      });
+      
+      // Return the request_id from the API for OTP verification
+      return data.requestId;
+    } catch (error) {
+      console.error("Error in login function:", error);
+      const errorMessage = error instanceof Error ? error.message : "Login failed";
+      sonnerToast.error("Login Failed", {
+        description: errorMessage,
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const verifyOtp = async (phone_number: string, request_id: string, otp: string): Promise<boolean> => {
     console.log("Inside verifyOtp function:", { phone_number, request_id, otp });
     try {
@@ -199,6 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!accessToken,
         isLoading,
         register,
+        login,
         verifyOtp,
         logout,
         accessToken,

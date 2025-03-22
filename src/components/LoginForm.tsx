@@ -11,7 +11,7 @@ import { toast } from "sonner";
 
 const LoginForm: React.FC = () => {
   const navigate = useNavigate();
-  const { register, isLoading } = useAuth();
+  const { login, isLoading } = useAuth();
   
   const [phoneNumber, setPhoneNumber] = useState("");
   const [countryCode, setCountryCode] = useState("91");
@@ -27,8 +27,8 @@ const LoginForm: React.FC = () => {
     }
     
     try {
-      // We can reuse the register function since it handles sending OTPs
-      const reqId = await register("", phoneNumber, countryCode);
+      // Use the dedicated login function instead of register
+      const reqId = await login(phoneNumber, countryCode);
       
       if (reqId) {
         // Navigate to the OTP verification page with the necessary data
