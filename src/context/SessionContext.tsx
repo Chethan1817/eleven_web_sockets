@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -80,9 +81,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       
       const data = await response.json();
+      console.log("Session created response:", data);
       setSessionId(data.session_id);
       
-      const wsUrl = ENDPOINTS.AUDIO_WEBSOCKET(user?.phone_number || "");
+      // Use the websocket_url from the response instead of constructing it
+      const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(user?.phone_number || "");
+      console.log("Connecting to WebSocket URL:", wsUrl);
+      
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
@@ -204,7 +209,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       
@@ -213,7 +221,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           audioChunksRef.current.push(event.data);
           
           if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+            console.log("Sending audio chunk, size:", event.data.size);
             websocketRef.current.send(event.data);
+          } else {
+            console.warn("WebSocket not open, cannot send audio data");
           }
         }
       };
@@ -222,8 +233,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         stream.getTracks().forEach(track => track.stop());
       };
       
+      // Use a smaller time slice for more frequent data sending
       mediaRecorder.start(250);
       setIsRecording(true);
+      
+      console.log("Recording started");
       
     } catch (error) {
       console.error("Error starting recording:", error);

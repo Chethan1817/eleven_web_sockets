@@ -26,12 +26,24 @@ const AudioRecorder: React.FC = () => {
       intervalId = setInterval(() => {
         setAudioLevel(Array(10).fill(0).map(() => Math.floor(Math.random() * 25) + 5));
       }, 100);
+      
+      console.log("Audio visualization active");
     }
     
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isRecording]);
+  
+  const handleStartRecording = () => {
+    console.log("Start recording button clicked");
+    startRecording();
+  };
+  
+  const handleStopRecording = () => {
+    console.log("Stop recording button clicked");
+    stopRecording();
+  };
   
   return (
     <div className="w-full flex flex-col items-center space-y-6 py-4">
@@ -82,7 +94,7 @@ const AudioRecorder: React.FC = () => {
                 "h-20 w-20 rounded-full shadow-lg transition-all duration-300",
                 isRecording && "animate-pulse"
               )}
-              onClick={isRecording ? stopRecording : startRecording}
+              onClick={isRecording ? handleStopRecording : handleStartRecording}
             >
               {isRecording ? (
                 <MicOff className="h-8 w-8" />
