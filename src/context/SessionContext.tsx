@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -241,11 +242,19 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isRecording]);
   
-  const clearSession = () => {
-    setTranscripts([]);
-    setResponses([]);
-    setSessionId(null);
-  };
+  // Modified clearSession function to check for existing state
+  const clearSession = useCallback(() => {
+    // Only update state if there's something to clear
+    if (transcripts.length > 0) {
+      setTranscripts([]);
+    }
+    if (responses.length > 0) {
+      setResponses([]);
+    }
+    if (sessionId !== null) {
+      setSessionId(null);
+    }
+  }, [transcripts.length, responses.length, sessionId]);
   
   return (
     <SessionContext.Provider

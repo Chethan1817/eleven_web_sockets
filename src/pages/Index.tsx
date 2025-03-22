@@ -12,10 +12,12 @@ const Index: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const { clearSession } = useSession();
   
-  // Clear session data when page loads
+  // Clear session data when page loads, but only once
   useEffect(() => {
+    // Only clear the session once when the component mounts
     clearSession();
-  }, [clearSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   // If loading, show a loading indicator
   if (isLoading) {
