@@ -59,6 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const mockRequestId = `Otp_${Math.random().toString(36).substring(2, 15).toUpperCase()}`;
       console.log("Generated mock request ID:", mockRequestId);
       
+      // Update user state with the registration info
       setUser({ name, phone_number, country_code });
       
       sonnerToast.success("OTP Sent", {

@@ -7,6 +7,8 @@ import AuthForm from "@/components/AuthForm";
 const Auth: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   
+  console.log("Auth page rendered with:", { isAuthenticated, isLoading });
+  
   // If loading, show a loading indicator
   if (isLoading) {
     return (
@@ -18,6 +20,7 @@ const Auth: React.FC = () => {
   
   // If authenticated, redirect to home page
   if (isAuthenticated) {
+    console.log("User is authenticated, redirecting to home");
     return <Navigate to="/" replace />;
   }
   
@@ -30,7 +33,7 @@ const Auth: React.FC = () => {
         </p>
       </div>
       
-      <AuthForm />
+      <AuthForm onSuccess={() => console.log("Authentication successful")} />
       
       <div className="mt-8 text-xs text-muted-foreground text-center max-w-md animate-fade-in">
         This is a testing platform for audio streaming, transcription, and response generation.

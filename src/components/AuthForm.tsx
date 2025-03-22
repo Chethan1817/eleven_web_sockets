@@ -31,12 +31,22 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
     e.preventDefault();
     console.log("Register button clicked with:", { name, phoneNumber, countryCode });
     
+    if (!name || !phoneNumber || !countryCode) {
+      console.error("Missing required fields");
+      return;
+    }
+    
     try {
       console.log("Calling register API...");
       const reqId = await register(name, phoneNumber, countryCode);
       console.log("Register API response:", reqId);
-      setRequestId(reqId);
-      setStep("verify");
+      
+      if (reqId) {
+        setRequestId(reqId);
+        setStep("verify");
+      } else {
+        console.error("No request ID returned from register function");
+      }
     } catch (error) {
       console.error("Registration error:", error);
     }
