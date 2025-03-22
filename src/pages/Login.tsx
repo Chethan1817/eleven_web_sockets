@@ -1,15 +1,11 @@
 
-import React, { useEffect } from "react";
-import { Navigate, Link } from "react-router-dom";
+import React, { useState } from "react";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import AuthForm from "@/components/AuthForm";
+import LoginForm from "@/components/LoginForm";
 
-const Auth: React.FC = () => {
+const Login: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
-  
-  useEffect(() => {
-    console.log("Auth page rendered with:", { isAuthenticated, isLoading });
-  }, [isAuthenticated, isLoading]);
   
   // If loading, show a loading indicator
   if (isLoading) {
@@ -22,7 +18,6 @@ const Auth: React.FC = () => {
   
   // If authenticated, redirect to home page
   if (isAuthenticated) {
-    console.log("User is authenticated, redirecting to home");
     return <Navigate to="/" replace />;
   }
   
@@ -31,17 +26,11 @@ const Auth: React.FC = () => {
       <div className="w-full max-w-md text-center mb-8 animate-slide-down">
         <h1 className="text-3xl font-medium mb-2">Sara Audio Pipeline Explorer</h1>
         <p className="text-muted-foreground">
-          Sign up to test audio streaming functionality
+          Sign in to access your account
         </p>
       </div>
       
-      <AuthForm />
-      
-      <div className="mt-4 text-center">
-        <Link to="/login" className="text-primary hover:underline">
-          Already have an account? Login
-        </Link>
-      </div>
+      <LoginForm />
       
       <div className="mt-8 text-xs text-muted-foreground text-center max-w-md animate-fade-in">
         This is a testing platform for audio streaming, transcription, and response generation.
@@ -50,4 +39,4 @@ const Auth: React.FC = () => {
   );
 };
 
-export default Auth;
+export default Login;

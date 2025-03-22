@@ -17,6 +17,7 @@ const OtpVerification: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [countryCode, setCountryCode] = useState("");
   const [requestId, setRequestId] = useState("");
+  const [isLogin, setIsLogin] = useState(false);
   
   useEffect(() => {
     // Get params from location state
@@ -24,11 +25,12 @@ const OtpVerification: React.FC = () => {
       phoneNumber: string; 
       countryCode: string; 
       requestId: string;
+      isLogin?: boolean;
     } | null;
     
     if (!state || !state.phoneNumber || !state.requestId) {
       toast.error("Missing verification information", {
-        description: "Please go back to the signup page and try again.",
+        description: "Please go back and try again.",
       });
       navigate("/auth");
       return;
@@ -37,6 +39,7 @@ const OtpVerification: React.FC = () => {
     setPhoneNumber(state.phoneNumber);
     setCountryCode(state.countryCode || "91");
     setRequestId(state.requestId);
+    setIsLogin(!!state.isLogin);
   }, [location, navigate]);
   
   const handleVerify = async (e: React.FormEvent) => {
@@ -52,6 +55,9 @@ const OtpVerification: React.FC = () => {
     try {
       const success = await verifyOtp(phoneNumber, requestId, otp);
       if (success) {
+        toast.success(isLogin ? "Login successful" : "Registration successful", {
+          description: isLogin ? "Welcome back!" : "Your account has been created successfully.",
+        });
         navigate("/");
       }
     } catch (error) {
@@ -68,7 +74,7 @@ const OtpVerification: React.FC = () => {
       <div className="w-full max-w-md text-center mb-8 animate-slide-down">
         <h1 className="text-3xl font-medium mb-2">Verify Your Number</h1>
         <p className="text-muted-foreground">
-          Enter the verification code to complete signup
+          Enter the verification code to {isLogin ? "login" : "complete signup"}
         </p>
       </div>
       
@@ -130,10 +136,10 @@ const OtpVerification: React.FC = () => {
               type="button"
               variant="ghost"
               className="w-full"
-              onClick={() => navigate("/auth")}
+              onClick={() => navigate(isLogin ? "/login" : "/auth")}
               disabled={isLoading}
             >
-              Back to Sign Up
+              Back to {isLogin ? "Login" : "Sign Up"}
             </Button>
           </form>
         </CardContent>
