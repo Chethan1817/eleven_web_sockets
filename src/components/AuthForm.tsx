@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -38,7 +37,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
     
     try {
       console.log("Calling register API...");
-      // To debug the function reference issue
       console.log("Register function exists:", typeof register === 'function');
       
       const reqId = await register(name, phoneNumber, countryCode);

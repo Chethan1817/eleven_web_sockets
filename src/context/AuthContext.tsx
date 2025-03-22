@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 
 interface User {
@@ -18,6 +18,9 @@ interface AuthContextType {
   verifyOtp: (phone_number: string, request_id: string, otp: string) => Promise<boolean>;
   logout: () => void;
 }
+
+// API base URL - replace with your actual API endpoint
+const API_BASE_URL = "https://your-actual-api-endpoint.com/api";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -48,16 +51,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an actual API call
-      // For testing purposes, we're simulating a successful registration
-      console.log("Simulating API call for registration...");
+      // Make the actual API call to your registration endpoint
+      console.log("Making API call to register endpoint");
       
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch(`${API_BASE_URL}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          phone_number,
+          country_code
+        }),
+      });
       
-      // Simulated successful response with request_id
-      const mockRequestId = `Otp_${Math.random().toString(36).substring(2, 15).toUpperCase()}`;
-      console.log("Generated mock request ID:", mockRequestId);
+      console.log("API response status:", response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Registration failed");
+      }
+      
+      const data = await response.json();
+      console.log("Registration API response:", data);
       
       // Update user state with the registration info
       setUser({ name, phone_number, country_code });
@@ -66,7 +83,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         description: `A verification code has been sent to +${country_code} ${phone_number}.`,
       });
       
-      return mockRequestId;
+      // Return the request_id from the API for OTP verification
+      return data.request_id;
     } catch (error) {
       console.error("Error in register function:", error);
       const errorMessage = error instanceof Error ? error.message : "Registration failed";
@@ -84,24 +102,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // Simulate API call delay
-      console.log("Simulating API call for OTP verification...");
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Make the actual API call to your OTP verification endpoint
+      console.log("Making API call to verify OTP");
       
-      // In a real app, this would validate the OTP against a backend
-      // For testing purposes, we're accepting any 6-digit OTP
-      if (otp.length !== 6) {
-        throw new Error("Invalid OTP format");
+      const response = await fetch(`${API_BASE_URL}/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_number,
+          request_id,
+          otp
+        }),
+      });
+      
+      console.log("API response status:", response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "OTP verification failed");
       }
       
-      // Simulated successful response
-      const mockToken = `Token_${Math.random().toString(36).substring(2, 30).toUpperCase()}`;
-      console.log("Generated mock token:", mockToken);
+      const data = await response.json();
+      console.log("Verification API response:", data);
       
+      // Update user with token from the verification response
       const updatedUser = { 
         ...user, 
         phone_number, 
-        token: mockToken 
+        token: data.token 
       };
       
       setUser(updatedUser);
