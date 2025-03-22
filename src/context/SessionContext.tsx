@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -65,7 +64,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       setIsConnecting(true);
       
-      // Create a new audio session
       const response = await fetch("http://localhost:8000/api/letta/audio_streaming_session/", {
         method: "POST",
         headers: {
@@ -83,7 +81,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const data = await response.json();
       setSessionId(data.session_id);
       
-      // Initialize WebSocket connection
       const wsUrl = `ws://localhost:8000/ws/audio/${user?.phone_number}/`;
       const ws = new WebSocket(wsUrl);
       
@@ -111,7 +108,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             };
             
             setTranscripts(prev => {
-              // Replace non-final transcript with the same ID or add a new one
               const filteredTranscripts = prev.filter(t => 
                 !(t.id === newTranscript.id && !t.is_final)
               );
@@ -169,18 +165,15 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!sessionId || !accessToken) return;
     
     try {
-      // Stop recording if active
       if (isRecording) {
         stopRecording();
       }
       
-      // Close WebSocket connection
       if (websocketRef.current) {
         websocketRef.current.close();
         websocketRef.current = null;
       }
       
-      // End the audio session via API
       await fetch(`http://localhost:8000/api/letta/end_audio_session/${sessionId}/`, {
         method: "POST",
         headers: {
@@ -218,7 +211,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
           
-          // Send the audio chunk via WebSocket if connection is open
           if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
             websocketRef.current.send(event.data);
           }
@@ -226,11 +218,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
       
       mediaRecorder.onstop = () => {
-        // Clean up stream tracks when recording stops
         stream.getTracks().forEach(track => track.stop());
       };
       
-      // Start recording with 250ms intervals to send small chunks
       mediaRecorder.start(250);
       setIsRecording(true);
       
