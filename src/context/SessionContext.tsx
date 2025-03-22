@@ -65,7 +65,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       setIsConnecting(true);
       
-      const response = await fetch("http://localhost:8000/api/letta/audio_streaming_session/", {
+      const response = await fetch("http://localhost:8000/letta/audio_streaming_session/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -175,7 +175,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         websocketRef.current = null;
       }
       
-      await fetch(`http://localhost:8000/api/letta/end_audio_session/${sessionId}/`, {
+      await fetch(`http://localhost:8000/letta/end_audio_session/${sessionId}/`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
