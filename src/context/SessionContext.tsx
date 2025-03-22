@@ -37,7 +37,7 @@ interface SessionContextType {
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
   const { toast } = useToast();
   
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -53,7 +53,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   
   const startSession = async () => {
-    if (!user?.token) {
+    if (!accessToken) {
       toast({
         title: "Authentication Required",
         description: "Please log in to start a session.",
@@ -70,9 +70,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${user.token}`,
+          "Authorization": `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ user_id: user.phone_number }),
+        body: JSON.stringify({ user_id: user?.phone_number }),
       });
       
       if (!response.ok) {
@@ -84,7 +84,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setSessionId(data.session_id);
       
       // Initialize WebSocket connection
-      const wsUrl = `ws://localhost:8000/ws/audio/${user.phone_number}/`;
+      const wsUrl = `ws://localhost:8000/ws/audio/${user?.phone_number}/`;
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
@@ -166,7 +166,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
   
   const stopSession = async () => {
-    if (!sessionId || !user?.token) return;
+    if (!sessionId || !accessToken) return;
     
     try {
       // Stop recording if active
@@ -184,7 +184,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       await fetch(`http://localhost:8000/api/letta/end_audio_session/${sessionId}/`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${user.token}`,
+          "Authorization": `Bearer ${accessToken}`,
         },
       });
       
