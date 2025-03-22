@@ -35,7 +35,7 @@ const Auth: React.FC = () => {
         </p>
       </div>
       
-      <AuthForm onSuccess={() => console.log("Authentication successful")} />
+      <AuthForm />
       
       <div className="mt-8 text-xs text-muted-foreground text-center max-w-md animate-fade-in">
         This is a testing platform for audio streaming, transcription, and response generation.
