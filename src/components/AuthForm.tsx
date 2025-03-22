@@ -6,6 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { 
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+  InputOTPSeparator
+} from "@/components/ui/input-otp";
 
 interface AuthFormProps {
   onSuccess?: () => void;
@@ -20,6 +26,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   const [countryCode, setCountryCode] = useState("91");
   const [requestId, setRequestId] = useState("");
   const [otp, setOtp] = useState("");
+  const [autoVerifying, setAutoVerifying] = useState(false);
   
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,8 +35,20 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       const reqId = await register(name, phoneNumber, countryCode);
       setRequestId(reqId);
       setStep("verify");
+      
+      // For testing purposes - auto-fill with OTP from backend
+      // In a real app, this would be removed as the actual OTP would be sent to the user's phone
+      // Here we assume the backend returns a test OTP for development
+      setOtp("123456"); // This would be the OTP from the backend response
+      setAutoVerifying(true);
+      
+      // Auto verify after a short delay
+      setTimeout(() => {
+        handleVerify(new Event('submit') as React.FormEvent);
+      }, 1500);
     } catch (error) {
       console.error("Registration error:", error);
+      setAutoVerifying(false);
     }
   };
   
@@ -43,7 +62,12 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       }
     } catch (error) {
       console.error("Verification error:", error);
+      setAutoVerifying(false);
     }
+  };
+  
+  const handleOtpChange = (value: string) => {
+    setOtp(value);
   };
   
   return (
@@ -55,7 +79,9 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
         <CardDescription>
           {step === "register" 
             ? "Enter your details to create an account"
-            : "Enter the verification code sent to your phone"
+            : autoVerifying 
+              ? "Auto-verifying with test OTP..." 
+              : "Enter the verification code sent to your phone"
           }
         </CardDescription>
       </CardHeader>
@@ -121,43 +147,66 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
           </form>
         ) : (
           <form onSubmit={handleVerify} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="otp">Verification Code</Label>
-              <Input
-                id="otp"
-                placeholder="Enter the OTP sent to your phone"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                required
-                className="bg-white/50 dark:bg-black/50 backdrop-blur-sm text-center text-lg tracking-widest"
-                maxLength={6}
-              />
+            <div className="space-y-4">
+              <Label htmlFor="otp" className="text-center block">Verification Code</Label>
+              
+              {autoVerifying ? (
+                <div className="flex items-center justify-center py-2">
+                  <div className="bg-white/50 dark:bg-black/50 backdrop-blur-sm px-4 py-2 rounded text-center text-lg tracking-widest flex items-center">
+                    <span className="mr-2">{otp}</span>
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center py-2">
+                  <InputOTP 
+                    value={otp} 
+                    onChange={handleOtpChange} 
+                    maxLength={6}
+                    className="gap-2"
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                      <InputOTPSlot index={1} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                      <InputOTPSlot index={2} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                    </InputOTPGroup>
+                    <InputOTPSeparator />
+                    <InputOTPGroup>
+                      <InputOTPSlot index={3} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                      <InputOTPSlot index={4} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                      <InputOTPSlot index={5} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+              )}
             </div>
             
             <Button 
               type="submit" 
               className="w-full mt-4"
-              disabled={isLoading}
+              disabled={isLoading || autoVerifying}
             >
-              {isLoading ? (
+              {isLoading || autoVerifying ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Verifying
+                  {autoVerifying ? "Auto-Verifying" : "Verifying"}
                 </>
               ) : (
                 "Verify & Continue"
               )}
             </Button>
             
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => setStep("register")}
-              disabled={isLoading}
-            >
-              Back to Sign Up
-            </Button>
+            {!autoVerifying && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => setStep("register")}
+                disabled={isLoading}
+              >
+                Back to Sign Up
+              </Button>
+            )}
           </form>
         )}
       </CardContent>

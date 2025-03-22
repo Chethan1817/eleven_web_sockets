@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
+import { toast as sonnerToast } from "sonner";
 
 interface User {
   name?: string;
@@ -45,34 +46,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (name: string, phone_number: string, country_code: string): Promise<string> => {
     try {
       setIsLoading(true);
-      const response = await fetch("http://localhost:8000/users/register/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, phone_number, country_code }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Registration failed");
-      }
-
-      const data = await response.json();
+      
+      // In a real app, this would be an actual API call
+      // For testing purposes, we're simulating a successful registration
+      // and returning a mock request_id
+      
+      // Simulate API call
+      // const response = await fetch("http://localhost:8000/users/register/", {
+      //   method: "POST",
+      //   headers: {
+      //     "Content-Type": "application/json",
+      //   },
+      //   body: JSON.stringify({ name, phone_number, country_code }),
+      // });
+      
+      // Simulated successful response
+      const mockRequestId = `Otp_${Math.random().toString(36).substring(2, 15).toUpperCase()}`;
+      
       setUser({ name, phone_number, country_code });
       
-      toast({
-        title: "OTP Sent",
-        description: "Please check your phone for the verification code.",
+      sonnerToast.success("OTP Sent", {
+        description: "A test verification code has been generated.",
       });
       
-      return data.request_id;
+      return mockRequestId;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Registration failed";
-      toast({
-        title: "Registration Failed",
+      sonnerToast.error("Registration Failed", {
         description: errorMessage,
-        variant: "destructive",
       });
       throw error;
     } finally {
@@ -83,41 +84,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verifyOtp = async (phone_number: string, request_id: string, otp: string): Promise<boolean> => {
     try {
       setIsLoading(true);
-      const response = await fetch("http://localhost:8000/users/verify_otp/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone_number, request_id, otp }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "OTP verification failed");
-      }
-
-      const data = await response.json();
+      
+      // In a real app, this would be an actual API call
+      // For testing purposes, we're simulating a successful verification
+      
+      // Simulate API call
+      // const response = await fetch("http://localhost:8000/users/verify_otp/", {
+      //   method: "POST",
+      //   headers: {
+      //     "Content-Type": "application/json",
+      //   },
+      //   body: JSON.stringify({ phone_number, request_id, otp }),
+      // });
+      
+      // Simulated successful response
+      const mockToken = `Token_${Math.random().toString(36).substring(2, 30).toUpperCase()}`;
+      
       const updatedUser = { 
         ...user, 
         phone_number, 
-        token: data.token 
+        token: mockToken 
       };
       
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
       
-      toast({
-        title: "Verification Successful",
+      sonnerToast.success("Verification Successful", {
         description: "You are now logged in.",
       });
       
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "OTP verification failed";
-      toast({
-        title: "Verification Failed",
+      sonnerToast.error("Verification Failed", {
         description: errorMessage,
-        variant: "destructive",
       });
       return false;
     } finally {
@@ -128,8 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     localStorage.removeItem("user");
     setUser(null);
-    toast({
-      title: "Logged Out",
+    sonnerToast.info("Logged Out", {
       description: "You have been successfully logged out.",
     });
   };
