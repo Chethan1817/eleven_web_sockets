@@ -38,6 +38,9 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
     
     try {
       console.log("Calling register API...");
+      // To debug the function reference issue
+      console.log("Register function exists:", typeof register === 'function');
+      
       const reqId = await register(name, phoneNumber, countryCode);
       console.log("Register API response:", reqId);
       
@@ -88,7 +91,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       
       <CardContent>
         {step === "register" ? (
-          <form onSubmit={handleRegister} className="space-y-4">
+          <form id="register-form" onSubmit={handleRegister} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input

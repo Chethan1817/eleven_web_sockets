@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import AuthForm from "@/components/AuthForm";
@@ -7,7 +7,9 @@ import AuthForm from "@/components/AuthForm";
 const Auth: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   
-  console.log("Auth page rendered with:", { isAuthenticated, isLoading });
+  useEffect(() => {
+    console.log("Auth page rendered with:", { isAuthenticated, isLoading });
+  }, [isAuthenticated, isLoading]);
   
   // If loading, show a loading indicator
   if (isLoading) {
