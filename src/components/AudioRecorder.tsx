@@ -10,6 +10,7 @@ const AudioRecorder: React.FC = () => {
     isSessionActive, 
     isRecording,
     isConnecting,
+    greeting,
     startSession, 
     stopSession, 
     startRecording, 
@@ -17,6 +18,7 @@ const AudioRecorder: React.FC = () => {
   } = useSession();
   
   const [audioLevel, setAudioLevel] = useState<number[]>(Array(10).fill(5));
+  const [showGreeting, setShowGreeting] = useState(false);
   
   // Simulate audio levels when recording
   useEffect(() => {
@@ -35,6 +37,18 @@ const AudioRecorder: React.FC = () => {
     };
   }, [isRecording]);
   
+  // Show greeting when session becomes active
+  useEffect(() => {
+    if (isSessionActive && greeting) {
+      setShowGreeting(true);
+      const timer = setTimeout(() => {
+        setShowGreeting(false);
+      }, 5000); // Hide greeting after 5 seconds
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isSessionActive, greeting]);
+  
   const handleStartRecording = () => {
     console.log("Start recording button clicked");
     startRecording();
@@ -47,6 +61,13 @@ const AudioRecorder: React.FC = () => {
   
   return (
     <div className="w-full flex flex-col items-center space-y-6 py-4">
+      {/* Greeting Message */}
+      {showGreeting && greeting && (
+        <div className="animate-fade-in-out text-primary font-medium text-lg mb-2">
+          {greeting}
+        </div>
+      )}
+      
       {/* Audio Visualization */}
       <div 
         className={cn(

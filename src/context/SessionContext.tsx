@@ -28,6 +28,7 @@ interface SessionContextType {
   responses: Response[];
   sessionId: string | null;
   websocket: WebSocket | null;
+  greeting: string | null;
   startSession: () => Promise<void>;
   stopSession: () => Promise<void>;
   startRecording: () => void;
@@ -48,6 +49,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
+  const [greeting, setGreeting] = useState<string | null>(null);
   
   const websocketRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -94,6 +96,20 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log("WebSocket connection established");
         setIsSessionActive(true);
         setIsConnecting(false);
+        
+        // Set the greeting message with the user's name
+        const userName = user?.name || "there";
+        setGreeting(`Hello ${userName}, how are you doing today?`);
+        
+        // Add the greeting as a response
+        const greetingResponse: Response = {
+          id: `greeting-${Date.now()}`,
+          text: `Hello ${userName}, how are you doing today?`,
+          type: "main",
+          timestamp: Date.now(),
+        };
+        
+        setResponses(prev => [...prev, greetingResponse]);
         
         toast({
           title: "Session Started",
@@ -279,6 +295,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         responses,
         sessionId,
         websocket: websocketRef.current,
+        greeting,
         startSession,
         stopSession,
         startRecording,
