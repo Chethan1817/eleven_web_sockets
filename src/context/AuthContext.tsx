@@ -4,10 +4,20 @@ import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 
 interface User {
+  id?: number;
   name?: string;
   phone_number: string;
   country_code?: string;
-  token?: string;
+  email?: string | null;
+  grant_id?: string | null;
+  provider?: string | null;
+}
+
+interface AuthResponse {
+  refresh: string;
+  access: string;
+  user: User;
+  message: string;
 }
 
 interface AuthContextType {
@@ -17,6 +27,8 @@ interface AuthContextType {
   register: (name: string, phone_number: string, country_code: string) => Promise<string>;
   verifyOtp: (phone_number: string, request_id: string, otp: string) => Promise<boolean>;
   logout: () => void;
+  accessToken: string | null;
+  refreshToken: string | null;
 }
 
 // API base URL - updated to match the provided curl commands
@@ -26,25 +38,37 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if user is stored in localStorage
+    // Check if user and tokens are stored in localStorage
     const storedUser = localStorage.getItem("user");
+    const storedAccessToken = localStorage.getItem("accessToken");
+    const storedRefreshToken = localStorage.getItem("refreshToken");
     
-    if (storedUser) {
+    if (storedUser && storedAccessToken && storedRefreshToken) {
       try {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
+        setAccessToken(storedAccessToken);
+        setRefreshToken(storedRefreshToken);
       } catch (error) {
         console.error("Failed to parse stored user:", error);
-        localStorage.removeItem("user");
+        clearLocalStorage();
       }
     }
     
     setIsLoading(false);
   }, []);
+
+  const clearLocalStorage = () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+  };
 
   const register = async (name: string, phone_number: string, country_code: string): Promise<string> => {
     console.log("Inside register function:", { name, phone_number, country_code });
@@ -84,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       // Return the request_id from the API for OTP verification
-      return data.request_id;
+      return data.requestId;
     } catch (error) {
       console.error("Error in register function:", error);
       const errorMessage = error instanceof Error ? error.message : "Registration failed";
@@ -124,18 +148,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error(errorData.message || "OTP verification failed");
       }
       
-      const data = await response.json();
+      const data: AuthResponse = await response.json();
       console.log("Verification API response:", data);
       
-      // Update user with token from the verification response
-      const updatedUser = { 
-        ...user, 
-        phone_number, 
-        token: data.token 
-      };
+      // Store tokens and user info from the response
+      setUser(data.user);
+      setAccessToken(data.access);
+      setRefreshToken(data.refresh);
       
-      setUser(updatedUser);
-      localStorage.setItem("user", JSON.stringify(updatedUser));
+      // Save to localStorage
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("accessToken", data.access);
+      localStorage.setItem("refreshToken", data.refresh);
       
       sonnerToast.success("Verification Successful", {
         description: "You are now logged in.",
@@ -155,8 +179,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem("user");
+    // Clear all auth data from state
     setUser(null);
+    setAccessToken(null);
+    setRefreshToken(null);
+    
+    // Clear localStorage
+    clearLocalStorage();
+    
     sonnerToast.info("Logged Out", {
       description: "You have been successfully logged out.",
     });
@@ -166,11 +196,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user?.token,
+        isAuthenticated: !!accessToken,
         isLoading,
         register,
         verifyOtp,
         logout,
+        accessToken,
+        refreshToken,
       }}
     >
       {children}
