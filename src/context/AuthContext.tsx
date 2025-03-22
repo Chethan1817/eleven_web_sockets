@@ -19,8 +19,8 @@ interface AuthContextType {
   logout: () => void;
 }
 
-// API base URL - replace with your actual API endpoint
-const API_BASE_URL = "https://your-actual-api-endpoint.com/api";
+// API base URL - updated to match the provided curl commands
+const API_BASE_URL = "http://localhost:8000";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -51,10 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // Make the actual API call to your registration endpoint
+      // Make the actual API call to the register endpoint from curl
       console.log("Making API call to register endpoint");
       
-      const response = await fetch(`${API_BASE_URL}/register`, {
+      const response = await fetch(`${API_BASE_URL}/users/register/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -102,10 +102,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // Make the actual API call to your OTP verification endpoint
+      // Make the actual API call to the verify_otp endpoint from curl
       console.log("Making API call to verify OTP");
       
-      const response = await fetch(`${API_BASE_URL}/verify-otp`, {
+      const response = await fetch(`${API_BASE_URL}/users/verify_otp/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
