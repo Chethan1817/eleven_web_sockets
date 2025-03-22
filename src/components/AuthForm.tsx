@@ -29,9 +29,12 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Register button clicked with:", { name, phoneNumber, countryCode });
     
     try {
+      console.log("Calling register API...");
       const reqId = await register(name, phoneNumber, countryCode);
+      console.log("Register API response:", reqId);
       setRequestId(reqId);
       setStep("verify");
     } catch (error) {
@@ -41,9 +44,12 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Verify button clicked with:", { phoneNumber, requestId, otp });
     
     try {
+      console.log("Calling verify OTP API...");
       const success = await verifyOtp(phoneNumber, requestId, otp);
+      console.log("Verify OTP API response:", success);
       if (success && onSuccess) {
         onSuccess();
       }
@@ -114,7 +120,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
             <Button 
               type="submit" 
               className="w-full mt-4"
-              disabled={isLoading}
+              disabled={isLoading || !name || !phoneNumber || !countryCode}
             >
               {isLoading ? (
                 <>

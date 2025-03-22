@@ -44,17 +44,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const register = async (name: string, phone_number: string, country_code: string): Promise<string> => {
+    console.log("Inside register function:", { name, phone_number, country_code });
     try {
       setIsLoading(true);
       
       // In a real app, this would be an actual API call
       // For testing purposes, we're simulating a successful registration
+      console.log("Simulating API call for registration...");
       
       // Simulate API call delay
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Simulated successful response with request_id
       const mockRequestId = `Otp_${Math.random().toString(36).substring(2, 15).toUpperCase()}`;
+      console.log("Generated mock request ID:", mockRequestId);
       
       setUser({ name, phone_number, country_code });
       
@@ -64,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       return mockRequestId;
     } catch (error) {
+      console.error("Error in register function:", error);
       const errorMessage = error instanceof Error ? error.message : "Registration failed";
       sonnerToast.error("Registration Failed", {
         description: errorMessage,
@@ -75,10 +79,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const verifyOtp = async (phone_number: string, request_id: string, otp: string): Promise<boolean> => {
+    console.log("Inside verifyOtp function:", { phone_number, request_id, otp });
     try {
       setIsLoading(true);
       
       // Simulate API call delay
+      console.log("Simulating API call for OTP verification...");
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       // In a real app, this would validate the OTP against a backend
@@ -89,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Simulated successful response
       const mockToken = `Token_${Math.random().toString(36).substring(2, 30).toUpperCase()}`;
+      console.log("Generated mock token:", mockToken);
       
       const updatedUser = { 
         ...user, 
@@ -105,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       return true;
     } catch (error) {
+      console.error("Error in verifyOtp function:", error);
       const errorMessage = error instanceof Error ? error.message : "OTP verification failed";
       sonnerToast.error("Verification Failed", {
         description: errorMessage,
