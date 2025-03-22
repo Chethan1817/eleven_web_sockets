@@ -1,7 +1,7 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
+import { ENDPOINTS } from "@/config";
 
 interface Transcript {
   id: string;
@@ -65,7 +65,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       setIsConnecting(true);
       
-      const response = await fetch("http://localhost:8000/letta/audio_streaming_session/", {
+      const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -82,7 +82,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const data = await response.json();
       setSessionId(data.session_id);
       
-      const wsUrl = `ws://localhost:8000/ws/audio/${user?.phone_number}/`;
+      const wsUrl = ENDPOINTS.AUDIO_WEBSOCKET(user?.phone_number || "");
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
@@ -175,7 +175,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         websocketRef.current = null;
       }
       
-      await fetch(`http://localhost:8000/letta/end_audio_session/${sessionId}/`, {
+      await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
@@ -242,9 +242,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isRecording]);
   
-  // Modified clearSession function to check for existing state
   const clearSession = useCallback(() => {
-    // Only update state if there's something to clear
     if (transcripts.length > 0) {
       setTranscripts([]);
     }

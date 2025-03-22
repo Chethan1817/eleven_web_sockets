@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
+import { ENDPOINTS } from "@/config";
 
 interface User {
   id?: number;
@@ -30,8 +31,6 @@ interface AuthContextType {
   accessToken: string | null;
   refreshToken: string | null;
 }
-
-const API_BASE_URL = "http://localhost:8000";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -75,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       console.log("Making API call to register endpoint");
       
-      const response = await fetch(`${API_BASE_URL}/users/register/`, {
+      const response = await fetch(ENDPOINTS.REGISTER, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -123,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       console.log("Making API call to login endpoint");
       
-      const response = await fetch(`${API_BASE_URL}/users/login/`, {
+      const response = await fetch(ENDPOINTS.LOGIN, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,7 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       console.log("Making API call to verify OTP");
       
-      const response = await fetch(`${API_BASE_URL}/users/verify_otp/`, {
+      const response = await fetch(ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
