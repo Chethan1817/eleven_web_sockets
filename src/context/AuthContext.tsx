@@ -49,24 +49,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // In a real app, this would be an actual API call
       // For testing purposes, we're simulating a successful registration
-      // and returning a mock request_id
       
-      // Simulate API call
-      // const response = await fetch("http://localhost:8000/users/register/", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({ name, phone_number, country_code }),
-      // });
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Simulated successful response
+      // Simulated successful response with request_id
       const mockRequestId = `Otp_${Math.random().toString(36).substring(2, 15).toUpperCase()}`;
       
       setUser({ name, phone_number, country_code });
       
       sonnerToast.success("OTP Sent", {
-        description: "A test verification code has been generated.",
+        description: `A verification code has been sent to +${country_code} ${phone_number}.`,
       });
       
       return mockRequestId;
@@ -85,17 +78,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an actual API call
-      // For testing purposes, we're simulating a successful verification
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Simulate API call
-      // const response = await fetch("http://localhost:8000/users/verify_otp/", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({ phone_number, request_id, otp }),
-      // });
+      // In a real app, this would validate the OTP against a backend
+      // For testing purposes, we're accepting any 6-digit OTP
+      if (otp.length !== 6) {
+        throw new Error("Invalid OTP format");
+      }
       
       // Simulated successful response
       const mockToken = `Token_${Math.random().toString(36).substring(2, 30).toUpperCase()}`;

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Phone } from "lucide-react";
 import { 
   InputOTP,
   InputOTPGroup,
@@ -26,7 +26,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   const [countryCode, setCountryCode] = useState("91");
   const [requestId, setRequestId] = useState("");
   const [otp, setOtp] = useState("");
-  const [autoVerifying, setAutoVerifying] = useState(false);
   
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,20 +34,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       const reqId = await register(name, phoneNumber, countryCode);
       setRequestId(reqId);
       setStep("verify");
-      
-      // For testing purposes - auto-fill with OTP from backend
-      // In a real app, this would be removed as the actual OTP would be sent to the user's phone
-      // Here we assume the backend returns a test OTP for development
-      setOtp("123456"); // This would be the OTP from the backend response
-      setAutoVerifying(true);
-      
-      // Auto verify after a short delay
-      setTimeout(() => {
-        handleVerify(new Event('submit') as React.FormEvent);
-      }, 1500);
     } catch (error) {
       console.error("Registration error:", error);
-      setAutoVerifying(false);
     }
   };
   
@@ -62,7 +49,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       }
     } catch (error) {
       console.error("Verification error:", error);
-      setAutoVerifying(false);
     }
   };
   
@@ -79,9 +65,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
         <CardDescription>
           {step === "register" 
             ? "Enter your details to create an account"
-            : autoVerifying 
-              ? "Auto-verifying with test OTP..." 
-              : "Enter the verification code sent to your phone"
+            : `Enter the verification code sent to +${countryCode} ${phoneNumber}`
           }
         </CardDescription>
       </CardHeader>
@@ -147,66 +131,68 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
           </form>
         ) : (
           <form onSubmit={handleVerify} className="space-y-4">
+            <div className="flex items-center justify-center mb-4">
+              <div className="bg-primary/10 rounded-full p-3">
+                <Phone className="h-6 w-6 text-primary" />
+              </div>
+            </div>
+            
+            <div className="text-center mb-4">
+              <div className="text-sm text-muted-foreground">
+                We've sent a 6-digit verification code to
+              </div>
+              <div className="font-medium">+{countryCode} {phoneNumber}</div>
+            </div>
+            
             <div className="space-y-4">
-              <Label htmlFor="otp" className="text-center block">Verification Code</Label>
+              <Label htmlFor="otp" className="text-center block">Enter verification code</Label>
               
-              {autoVerifying ? (
-                <div className="flex items-center justify-center py-2">
-                  <div className="bg-white/50 dark:bg-black/50 backdrop-blur-sm px-4 py-2 rounded text-center text-lg tracking-widest flex items-center">
-                    <span className="mr-2">{otp}</span>
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center py-2">
-                  <InputOTP 
-                    value={otp} 
-                    onChange={handleOtpChange} 
-                    maxLength={6}
-                    className="gap-2"
-                  >
-                    <InputOTPGroup>
-                      <InputOTPSlot index={0} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                      <InputOTPSlot index={1} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                      <InputOTPSlot index={2} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                    </InputOTPGroup>
-                    <InputOTPSeparator />
-                    <InputOTPGroup>
-                      <InputOTPSlot index={3} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                      <InputOTPSlot index={4} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                      <InputOTPSlot index={5} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
-                    </InputOTPGroup>
-                  </InputOTP>
-                </div>
-              )}
+              <div className="flex justify-center py-2">
+                <InputOTP 
+                  value={otp} 
+                  onChange={handleOtpChange} 
+                  maxLength={6}
+                  className="gap-2"
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                    <InputOTPSlot index={1} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                    <InputOTPSlot index={2} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                  </InputOTPGroup>
+                  <InputOTPSeparator />
+                  <InputOTPGroup>
+                    <InputOTPSlot index={3} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                    <InputOTPSlot index={4} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                    <InputOTPSlot index={5} className="bg-white/50 dark:bg-black/50 backdrop-blur-sm" />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
             </div>
             
             <Button 
               type="submit" 
               className="w-full mt-4"
-              disabled={isLoading || autoVerifying}
+              disabled={isLoading || otp.length < 6}
             >
-              {isLoading || autoVerifying ? (
+              {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {autoVerifying ? "Auto-Verifying" : "Verifying"}
+                  Verifying
                 </>
               ) : (
                 "Verify & Continue"
               )}
             </Button>
             
-            {!autoVerifying && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                onClick={() => setStep("register")}
-                disabled={isLoading}
-              >
-                Back to Sign Up
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setStep("register")}
+              disabled={isLoading}
+            >
+              Back to Sign Up
+            </Button>
           </form>
         )}
       </CardContent>
