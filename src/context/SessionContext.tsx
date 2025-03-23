@@ -493,14 +493,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log("Component unmounting, but waiting briefly before stopping session...");
         
         setTimeout(() => {
-          if (websocketRef.current?.readyState === WebSocket.CONNECTING && !hasOpenedRef.current) {
+          const ws = websocketRef.current;
+
+          if (ws?.readyState === WebSocket.CONNECTING) {
             console.warn("Skipping stopSession: WebSocket still connecting during unmount");
-            
-            if (websocketRef.current) {
-              console.log("Closing connecting WebSocket during unmount");
-              websocketRef.current.close();
-              websocketRef.current = null;
-            }
+            // No longer manually close the WebSocket if it's still connecting
+            // Let it either connect successfully or time out naturally
           } else {
             console.log("Safe to stop session after delay");
             stopSession();
