@@ -31,7 +31,8 @@ const StatusIndicator: React.FC = () => {
         onopen: !!websocket.onopen,
         onmessage: !!websocket.onmessage,
         onerror: !!websocket.onerror,
-        onclose: !!websocket.onclose
+        onclose: !!websocket.onclose,
+        pingInterval: !!(websocket as any).pingInterval
       });
     }
   }, [wsState, websocket]);
@@ -49,7 +50,7 @@ const StatusIndicator: React.FC = () => {
     return (
       <Badge variant="outline" className="bg-primary/10 text-primary px-3 py-1">
         <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-        <span>Connecting</span>
+        <span>Connecting...</span>
       </Badge>
     );
   }

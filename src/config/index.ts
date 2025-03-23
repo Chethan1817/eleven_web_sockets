@@ -9,7 +9,9 @@ export const API_BASE_URL = window.location.protocol === 'https:'
   : "http://localhost:8000";  // Use HTTP in development
 
 // Ensure WebSocket protocol matches HTTP protocol (ws for http, wss for https)
-export const WEBSOCKET_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
+export const WEBSOCKET_BASE_URL = window.location.protocol === 'https:'
+  ? "wss://localhost:8000"    // Use WSS for secure connections
+  : "ws://localhost:8000";    // Use WS for non-secure connections
 
 // API endpoints
 export const ENDPOINTS = {

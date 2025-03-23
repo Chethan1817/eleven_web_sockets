@@ -201,6 +201,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     if (websocketRef.current && websocketRef.current.readyState !== WebSocket.CLOSED) {
       console.log("Closing existing WebSocket connection");
+      
+      if ((websocketRef.current as any).pingInterval) {
+        clearInterval((websocketRef.current as any).pingInterval);
+      }
+      
       websocketRef.current.close();
     }
     
@@ -209,7 +214,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][ws.readyState]);
     
     const connectionTimeout = setTimeout(() => {
-      console.log("WebSocket connection timeout after 15 seconds");
+      console.log("WebSocket connection timeout after 30 seconds");
       if (ws.readyState !== WebSocket.OPEN) {
         console.error("WebSocket connection timeout");
         ws.close();
@@ -220,7 +225,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           variant: "destructive",
         });
       }
-    }, 15000); // 15 seconds timeout
+    }, 30000); // 30 seconds timeout for initial connection
     
     ws.onopen = () => {
       clearTimeout(connectionTimeout);
@@ -284,7 +289,16 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     ws.onclose = (event) => {
       clearTimeout(connectionTimeout);
+      
+      if ((ws as any).pingInterval) {
+        clearInterval((ws as any).pingInterval);
+      }
+      
       console.log(`📡 WebSocket connection closed: Code ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''}`);
+      
+      if (event.code === 1006) {
+        console.log("Abnormal closure detected. This could indicate network issues or server problems.");
+      }
       
       if (isSessionActive) {
         setIsSessionActive(false);
