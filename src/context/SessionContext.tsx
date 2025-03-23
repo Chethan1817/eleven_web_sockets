@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -156,7 +155,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           "Authorization": `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ 
-          user_id: user?.phone_number || user?.id,
+          user_id: user?.phone_number || user?.id || "",
           user_name: user?.name 
         }),
       });
@@ -177,10 +176,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setSessionId(data.session_id);
       
       // Connect to WebSocket with the session ID and user ID
-      const userId = user?.phone_number || user?.id;
-      if (!userId) {
-        throw new Error("User ID not available");
-      }
+      const userId = user?.phone_number || user?.id || "";
       
       // Check if there's a websocket_url in the response, otherwise construct one
       const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(userId, data.session_id);
