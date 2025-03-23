@@ -59,7 +59,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const audioQueueRef = useRef<{blob: Blob, id: string}[]>([]);
+  const audioQueueRef = useRef<{blob: Blob, id: string, format: "mp3" | "pcm" | "auto"}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
   
   const clearAudioQueue = useCallback(() => {
@@ -71,29 +71,36 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (audioQueueRef.current.length > 0 && !isPlayingRef.current) {
       const next = audioQueueRef.current.shift();
       if (next) {
-        console.log(`Playing next PCM audio in queue: ${next.id}`);
+        console.log(`Playing next audio in queue: ${next.id} (format: ${next.format})`);
         isPlayingRef.current = true;
         
         try {
           const success = await playAudio(next.blob, next.id, {
             sampleRate: 16000,
-            channels: 1
+            channels: 1,
+            format: next.format
           });
           
           if (success) {
-            const durationMs = (next.blob.size / 32) + 500; // Add buffer
+            let durationMs: number;
+            
+            if (next.format === "mp3") {
+              durationMs = 10000; // 10 seconds max
+            } else {
+              durationMs = (next.blob.size / 32) + 500; // Add buffer
+            }
             
             setTimeout(() => {
               isPlayingRef.current = false;
               playNextInQueue();
             }, durationMs);
           } else {
-            console.error(`Failed to play PCM audio ${next.id}`);
+            console.error(`Failed to play audio ${next.id}`);
             isPlayingRef.current = false;
             setTimeout(playNextInQueue, 100); // Try next audio after delay
           }
         } catch (err) {
-          console.error("Exception in PCM audio playback:", err);
+          console.error("Exception in audio playback:", err);
           isPlayingRef.current = false;
           setTimeout(playNextInQueue, 100);
         }
@@ -132,31 +139,37 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       else if (event.data instanceof Blob) {
         const audioSize = event.data.size;
-        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of PCM audio`);
         
-        const pcmBlob = new Blob([event.data], { type: 'audio/pcm' });
+        const isMp3 = await isMP3Format(event.data);
+        const audioFormat = isMp3 ? "mp3" : "pcm";
+        const audioMimeType = isMp3 ? "audio/mpeg" : "audio/pcm";
+        
+        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of ${audioFormat.toUpperCase()} audio`);
+        
+        const audioBlob = new Blob([event.data], { type: audioMimeType });
         const audioId = `audio-${Date.now()}`;
         
-        const placeholderUrl = URL.createObjectURL(pcmBlob);
+        const placeholderUrl = URL.createObjectURL(audioBlob);
         
         const newResponse: Response = {
           id: audioId,
-          text: `Audio response received (${audioSize} bytes, PCM format)`,
+          text: `Audio response received (${audioSize} bytes, ${audioFormat.toUpperCase()} format)`,
           audio_url: placeholderUrl,
           type: "main",
           timestamp: Date.now(),
           raw_data: { 
             size: audioSize, 
-            type: 'audio/pcm',
-            format: 'PCM' 
+            type: audioMimeType,
+            format: audioFormat.toUpperCase() 
           }
         };
         
         setResponses(prev => [...prev, newResponse]);
         
         audioQueueRef.current.push({
-          blob: pcmBlob, 
-          id: audioId
+          blob: audioBlob, 
+          id: audioId,
+          format: audioFormat
         });
         
         if (!isPlayingRef.current) {
@@ -349,8 +362,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
       
-      let mimeType = 'audio/webm;codecs=opus';
-      
       const mimeTypes = [
         'audio/webm;codecs=opus',
         'audio/webm',
@@ -358,6 +369,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         'audio/ogg;codecs=opus',
         'audio/ogg'
       ];
+      
+      let mimeType = 'audio/webm;codecs=opus';
       
       for (const type of mimeTypes) {
         if (MediaRecorder.isTypeSupported(type)) {
@@ -415,7 +428,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.error("MediaRecorder error:", error);
       };
       
-      mediaRecorder.start(100); // Trigger ondataavailable every 100ms
+      mediaRecorder.start(100);
       console.log("Recording started successfully");
       
     } catch (error) {

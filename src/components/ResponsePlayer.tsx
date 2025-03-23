@@ -7,7 +7,7 @@ import { Volume2, VolumeX, PlayCircle, Code, Info, PlaySquare } from "lucide-rea
 import { cn } from "@/lib/utils";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { detectBrowserAudioSupport, playAudio } from "@/utils/audioUtils";
+import { detectBrowserAudioSupport, playAudio, isMP3Format } from "@/utils/audioUtils";
 
 const ResponsePlayer: React.FC = () => {
   const { responses, isSessionActive, stopSession } = useSession();
@@ -49,33 +49,48 @@ const ResponsePlayer: React.FC = () => {
       const audioResponse = await fetch(response.audio_url);
       const audioBlob = await audioResponse.blob();
       
-      // Play audio as PCM
-      console.log(`Playing response ${response.id} as PCM audio`);
+      // Detect if it's MP3 or PCM
+      const isMp3 = await isMP3Format(audioBlob);
+      const format = isMp3 ? "mp3" : "pcm";
+      
+      console.log(`Playing response ${response.id} as ${format.toUpperCase()} audio`);
+      setCurrentPlayingId(response.id);
+      
       const success = await playAudio(audioBlob, response.id, {
-        sampleRate: 16000,  // PCM format sample rate
-        channels: 1
+        sampleRate: 16000,
+        channels: 1,
+        format: format
       });
       
-      if (success) {
-        setCurrentPlayingId(response.id);
-        
-        // Auto-reset playing state after a timeout (PCM playback doesn't have events)
-        setTimeout(() => {
-          setCurrentPlayingId(null);
-        }, (audioBlob.size / 32) + 1000); // Rough estimate: 16-bit PCM at 16kHz is 32 bytes per ms
+      if (!success) {
+        setAudioPlaybackError(`Failed to play ${format.toUpperCase()} audio. Please try refreshing the browser.`);
+        setCurrentPlayingId(null);
       } else {
-        setAudioPlaybackError("Failed to play PCM audio. Please try refreshing the browser.");
+        // For MP3, we need to set a timeout to reset the playing state
+        if (format === "mp3") {
+          // Rough estimate for MP3 duration based on size (very approximate)
+          const durationEstimate = (audioBlob.size / 16000) * 8 + 1000; // Add 1s buffer
+          setTimeout(() => {
+            setCurrentPlayingId(null);
+          }, durationEstimate); 
+        } else {
+          // For PCM, we use the existing timeout mechanism in playAudio
+          const pcmDuration = (audioBlob.size / 32) + 500;
+          setTimeout(() => {
+            setCurrentPlayingId(null);
+          }, pcmDuration);
+        }
       }
     } catch (err) {
       console.error("Exception during audio playback setup:", err);
       setAudioPlaybackError(err instanceof Error ? err.message : String(err));
+      setCurrentPlayingId(null);
     }
   };
   
   const toggleMute = () => {
     setMuted(!muted);
-    // In the PCM-only scenario, we would need to implement volume control
-    // directly in the audioUtils.playPCMAudio function
+    // Implementation of volume control would go here
   };
   
   // Display empty state for inactive session
@@ -138,8 +153,11 @@ const ResponsePlayer: React.FC = () => {
             <Info className="h-4 w-4" />
             <AlertTitle>Audio Information</AlertTitle>
             <AlertDescription className="text-xs">
-              Using Web Audio API for PCM playback. Sample rate: 16kHz, 16-bit, mono channel.
-              {audioFormats.wav ? " Browser supports WAV." : " Browser doesn't support WAV."}
+              Using Web Audio API for audio playback. Supporting both MP3 and PCM formats.
+              Browser compatibility: 
+              {audioFormats.mp3 ? " MP3 ✓" : " MP3 ✗"}
+              {audioFormats.wav ? " WAV ✓" : " WAV ✗"}
+              {audioFormats.ogg ? " OGG ✓" : " OGG ✗"}
             </AlertDescription>
           </Alert>
           
@@ -170,9 +188,10 @@ const ResponsePlayer: React.FC = () => {
                     size="sm"
                     className={cn(
                       "h-8 w-8 p-0 rounded-full",
-                      currentPlayingId === response.id && "text-primary"
+                      currentPlayingId === response.id && "text-primary animate-pulse"
                     )}
                     onClick={() => playResponseAudio(response)}
+                    disabled={currentPlayingId !== null && currentPlayingId !== response.id}
                     title="Play audio response"
                   >
                     <PlaySquare size={18} />
