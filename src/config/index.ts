@@ -35,7 +35,4 @@ export const ENDPOINTS = {
   AUDIO_HTTP_INPUT: (userId: string, sessionId: string) => 
     `${API_BASE_URL}/letta/audio_input/?user_id=${userId}&session_id=${sessionId}`,
   CLOSE_HTTP_SESSION: `${API_BASE_URL}/letta/close_session/`,
-  
-  // Chat endpoint
-  TEXT_CHAT: `${API_BASE_URL}/letta/chat/`,
 };

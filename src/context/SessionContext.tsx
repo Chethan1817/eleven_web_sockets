@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -46,22 +45,6 @@ interface SessionContextType {
   interruptResponse: () => void;
   useHttpStreaming: boolean;
   setUseHttpStreaming: (useHttp: boolean) => void;
-}
-
-// TypeScript interfaces for stream callbacks
-interface TranscriptData {
-  text: string;
-  is_final: boolean;
-}
-
-interface ResponseData {
-  text: string;
-  type?: string;
-}
-
-interface AudioData {
-  blob: Blob;
-  format?: "mp3" | "pcm" | "auto";
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -307,7 +290,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return ws;
   }, [handleWebSocketMessage, toast, isSessionActive, useHttpStreaming, setUseHttpStreaming]);
   
-  // Define stopSession at the top level before it's used
   const stopSession = useCallback(async (): Promise<void> => {
     setIsSessionActive(false);
     setIsRecording(false);
@@ -355,8 +337,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     if (sessionId && user) {
       try {
+        const userIdString = String(user.id);
+        
         if (useHttpStreaming) {
-          await closeHttpSession(user.id, sessionId);
+          await closeHttpSession(userIdString, sessionId);
         } else {
           await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
             method: "POST",
@@ -364,7 +348,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               "Content-Type": "application/json",
               ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
             },
-            body: JSON.stringify({ user_id: user.id })
+            body: JSON.stringify({ user_id: userIdString })
           });
         }
       } catch (error) {
@@ -375,7 +359,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSessionId(null);
   }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming]);
   
-  // Now define startSession which depends on stopSession
   const startSession = useCallback(async (): Promise<void> => {
     if (!user) {
       toast({
@@ -392,14 +375,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     try {
       let newSessionId;
+      const userIdString = String(user.id);
       
       if (useHttpStreaming) {
-        newSessionId = await createHttpSession(user.id);
+        newSessionId = await createHttpSession(userIdString);
         setSessionId(newSessionId);
         
-        // Fix type issues with the callbacks for HTTP streaming
         const controller = startHttpStreaming(
-          user.id,
+          userIdString,
           newSessionId,
           (text: string, isFinal: boolean) => {
             setTranscripts(prev => [...prev, {
@@ -413,7 +396,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setResponses(prev => [...prev, {
               id: `resp-${Date.now()}`,
               text: text || "",
-              type: "main", // Default to main type
+              type: "main",
               timestamp: Date.now()
             }]);
           },
@@ -441,7 +424,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             "Content-Type": "application/json",
             ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
           },
-          body: JSON.stringify({ user_id: user.id })
+          body: JSON.stringify({ user_id: userIdString })
         });
         
         if (!response.ok) {
@@ -452,7 +435,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         newSessionId = data.session_id;
         setSessionId(newSessionId);
         
-        const ws = createWebSocketConnection(user.id, newSessionId);
+        const ws = createWebSocketConnection(userIdString, newSessionId);
         websocketRef.current = ws;
       }
     } catch (error) {
@@ -484,7 +467,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       if (useHttpStreaming) {
         if (!httpRecorderRef.current && user && sessionId) {
-          httpRecorderRef.current = new HttpAudioRecorder(user.id, sessionId);
+          const userIdString = String(user.id);
+          httpRecorderRef.current = new HttpAudioRecorder(userIdString, sessionId);
         }
         
         if (httpRecorderRef.current) {
@@ -624,4 +608,3 @@ export const useSession = () => {
   }
   return context;
 };
-
