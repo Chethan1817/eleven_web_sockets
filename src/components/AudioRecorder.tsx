@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
@@ -93,11 +92,8 @@ const AudioRecorder: React.FC = () => {
       stopRecording();
     } else {
       console.log("Starting recording");
-      startRecording().then(() => {
-        console.log("Recording started successfully - speak now to see audio processing");
-      }).catch(error => {
-        console.error("Failed to start recording:", error);
-      });
+      startRecording();
+      console.log("Recording started successfully - speak now to see audio processing");
     }
   };
   
