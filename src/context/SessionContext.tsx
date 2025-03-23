@@ -311,6 +311,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     
     if (streamControllerRef.current) {
+      console.log("Aborting HTTP stream controller");
       streamControllerRef.current.abort();
       streamControllerRef.current = null;
     }
@@ -381,10 +382,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Closing existing session before starting a new one");
       await stopSession();
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     setIsConnecting(true);
+    sessionActiveRef.current = true;
     
     try {
       console.log("Starting new session...");
@@ -400,6 +402,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           userIdString,
           newSessionId,
           (text: string, isFinal: boolean) => {
+            console.log(`Received transcript: "${text}", isFinal: ${isFinal}`);
             setTranscripts(prev => [...prev, {
               id: `trans-${Date.now()}`,
               text: text || "",
@@ -408,6 +411,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }]);
           },
           (text: string, audioData?: ArrayBuffer) => {
+            console.log(`Received response: "${text.substring(0, 50)}..."`);
             setResponses(prev => [...prev, {
               id: `resp-${Date.now()}`,
               text: text || "",
