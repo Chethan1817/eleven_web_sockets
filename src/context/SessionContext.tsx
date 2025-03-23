@@ -174,5 +174,443 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const audioBlob = new Blob([event.data], { type: audioMimeType });
       const audioId = `audio-${Date.now()}`;
       
+      audioQueueRef.current.push({
+        blob: audioBlob,
+        id: audioId,
+        format: audioFormat
+      });
+      
+      playNextInQueue();
+    }
+  }, [playNextInQueue]);
+  
+  const createWebSocketConnection = useCallback((userId: string, sessionId: string) => {
+    const wsUrl = ENDPOINTS.AUDIO_WEBSOCKET(userId, sessionId);
+    console.log(`Creating WebSocket connection to: ${wsUrl}`);
+    
+    const ws = new WebSocket(wsUrl);
+    
+    const connectionTimeoutId = setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) {
+        console.warn("WebSocket connection timeout after 30 seconds");
+        ws.close();
+        setIsConnecting(false);
+        toast({
+          title: "Connection Timeout",
+          description: "The WebSocket connection timed out. Please try again.",
+          variant: "destructive"
+        });
+      }
+    }, 30000);
+    
+    ws.onopen = () => {
+      console.log("WebSocket connection opened successfully", { readyState: ws.readyState });
+      clearTimeout(connectionTimeoutId);
+      
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: "ping" }));
+            console.log("Ping sent to keep WebSocket connection alive");
+          } catch (err) {
+            console.error("Error sending ping:", err);
+          }
+        } else {
+          clearInterval(pingInterval);
+          console.log("Clearing ping interval, WebSocket is no longer open");
+        }
+      }, 30000);
+      
+      (ws as any).pingInterval = pingInterval;
+    };
+    
+    ws.onmessage = handleWebSocketMessage;
+    
+    ws.onerror = (error) => {
+      console.error("WebSocket connection error:", error);
+      console.log("Error details:", {
+        type: error.type,
+        target: error.target,
+        eventPhase: error.eventPhase,
+        bubbles: error.bubbles,
+        cancelable: error.cancelable,
+        composed: error.composed,
+        timeStamp: error.timeStamp,
+        defaultPrevented: error.defaultPrevented,
+        isTrusted: error.isTrusted,
+        currentTarget: error.currentTarget
+      });
+      
+      toast({
+        title: "Connection Error",
+        description: "Failed to establish WebSocket connection. Trying alternative method...",
+        variant: "destructive"
+      });
+      
+      if (!useHttpStreaming) {
+        setUseHttpStreaming(true);
+        toast({
+          title: "Switching to HTTP Streaming",
+          description: "Using more compatible streaming method",
+          variant: "default"
+        });
+      }
+    };
+    
+    ws.onclose = (event) => {
+      console.log(`WebSocket connection closed: Code ${event.code}`, {
+        reason: event.reason,
+        wasClean: event.wasClean
+      });
+      
+      clearTimeout(connectionTimeoutId);
+      
+      if ((ws as any).pingInterval) {
+        clearInterval((ws as any).pingInterval);
+      }
+      
+      if (event.code === 1006) {
+        console.log("Abnormal closure. This might be due to network issues or server problems.");
+        
+        if (isSessionActive) {
+          toast({
+            title: "Connection Lost",
+            description: "The connection was lost unexpectedly. Please try again.",
+            variant: "destructive"
+          });
+          
+          setIsSessionActive(false);
+          setIsConnecting(false);
+          setIsRecording(false);
+          setIsProcessing(false);
+        }
+      }
+    };
+    
+    return ws;
+  }, [handleWebSocketMessage, toast, isSessionActive, useHttpStreaming, setUseHttpStreaming]);
+  
+  const startSession = useCallback(async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to start a session.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    await stopSession();
+    
+    setIsConnecting(true);
+    
+    try {
+      let newSessionId;
+      
+      if (useHttpStreaming) {
+        newSessionId = await createHttpSession(user.id);
+        setSessionId(newSessionId);
+        
+        const controller = await startHttpStreaming(
+          user.id,
+          newSessionId,
+          (transcript) => {
+            if (transcript) {
+              setTranscripts(prev => [...prev, {
+                id: `trans-${Date.now()}`,
+                text: transcript.text,
+                is_final: transcript.is_final || false,
+                timestamp: Date.now()
+              }]);
+            }
+          },
+          (response) => {
+            if (response) {
+              setResponses(prev => [...prev, {
+                id: `resp-${Date.now()}`,
+                text: response.text,
+                type: response.type || "main",
+                timestamp: Date.now(),
+                raw_data: response
+              }]);
+            }
+          },
+          (audioBlobInfo) => {
+            audioQueueRef.current.push({
+              blob: audioBlobInfo.blob,
+              id: `audio-${Date.now()}`,
+              format: audioBlobInfo.format || "auto"
+            });
+            
+            playNextInQueue();
+          }
+        );
+        
+        streamControllerRef.current = controller;
+        setIsConnecting(false);
+        setIsSessionActive(true);
+        
+        toast({
+          title: "Session Started",
+          description: "Connected using HTTP streaming.",
+          variant: "default"
+        });
+      } else {
+        const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
+          },
+          body: JSON.stringify({ user_id: user.id })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        newSessionId = data.session_id;
+        setSessionId(newSessionId);
+        
+        const ws = createWebSocketConnection(user.id, newSessionId);
+        websocketRef.current = ws;
+      }
+    } catch (error) {
+      console.error("Failed to start session:", error);
+      setIsConnecting(false);
+      setIsSessionActive(false);
+      
+      toast({
+        title: "Session Start Failed",
+        description: `Could not start session: ${error instanceof Error ? error.message : "Unknown error"}`,
+        variant: "destructive"
+      });
+    }
+  }, [user, accessToken, stopSession, toast, createWebSocketConnection, playNextInQueue, useHttpStreaming]);
+  
+  const stopSession = useCallback(async () => {
+    setIsSessionActive(false);
+    setIsRecording(false);
+    setIsProcessing(false);
+    
+    clearAudioQueue();
+    
+    if (httpRecorderRef.current) {
+      httpRecorderRef.current.stop();
+      httpRecorderRef.current = null;
+    }
+    
+    if (streamControllerRef.current) {
+      streamControllerRef.current.abort();
+      streamControllerRef.current = null;
+    }
+    
+    if (websocketRef.current) {
+      if ((websocketRef.current as any).pingInterval) {
+        clearInterval((websocketRef.current as any).pingInterval);
+      }
+      
+      if (websocketRef.current.readyState === WebSocket.OPEN || 
+          websocketRef.current.readyState === WebSocket.CONNECTING) {
+        websocketRef.current.close();
+      }
+      websocketRef.current = null;
+    }
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+    }
+    
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      await audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    
+    audioSourceRef.current = null;
+    
+    if (sessionId && user) {
+      try {
+        if (useHttpStreaming) {
+          await closeHttpSession(user.id, sessionId);
+        } else {
+          await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
+            },
+            body: JSON.stringify({ user_id: user.id })
+          });
+        }
+      } catch (error) {
+        console.error("Error ending session on server:", error);
+      }
+    }
+    
+    setSessionId(null);
+    
+    return true;
+  }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming]);
+  
+  const startRecording = useCallback(async () => {
+    if (!isSessionActive) {
+      console.log("Cannot start recording: No active session");
+      return;
+    }
+    
+    if (isRecording) {
+      console.log("Already recording");
+      return;
+    }
+    
+    try {
+      setIsRecording(true);
+      
+      if (useHttpStreaming) {
+        if (!httpRecorderRef.current && user && sessionId) {
+          httpRecorderRef.current = new HttpAudioRecorder(user.id, sessionId);
+        }
+        
+        if (httpRecorderRef.current) {
+          await httpRecorderRef.current.start();
+          console.log("HTTP streaming recorder started");
+        }
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+        
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = audioContext;
+        
+        const source = audioContext.createMediaStreamSource(stream);
+        audioSourceRef.current = source;
+        
+        const recorder = new MediaRecorder(stream, {
+          mimeType: "audio/webm;codecs=opus",
+        });
+        
+        audioChunksRef.current = [];
+        
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        
+        recorder.onstop = async () => {
+          setIsRecording(false);
+          setIsProcessing(true);
+          
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          
+          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+            console.log(`Sending recorded audio (${audioBlob.size} bytes) to WebSocket`);
+            websocketRef.current.send(audioBlob);
+          } else {
+            console.error("WebSocket not open, cannot send audio");
+            setIsProcessing(false);
+          }
+          
+          audioChunksRef.current = [];
+        };
+        
+        mediaRecorderRef.current = recorder;
+        
+        recorder.start();
+      }
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      setIsRecording(false);
+      
+      toast({
+        title: "Recording Failed",
+        description: "Could not access microphone. Please check permissions.",
+        variant: "destructive"
+      });
+    }
+  }, [isSessionActive, isRecording, sessionId, user, toast, useHttpStreaming]);
+  
+  const stopRecording = useCallback(() => {
+    setIsProcessing(true);
+    
+    if (useHttpStreaming) {
+      if (httpRecorderRef.current) {
+        httpRecorderRef.current.stop();
+        console.log("HTTP streaming recorder stopped");
+      }
+    } else {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    }
+    
+    setIsRecording(false);
+  }, [useHttpStreaming]);
+  
+  const clearSession = useCallback(() => {
+    stopSession();
+    setTranscripts([]);
+    setResponses([]);
+    setGreeting(null);
+  }, [stopSession]);
+  
+  const interruptResponse = useCallback(() => {
+    setIsProcessing(false);
+    clearAudioQueue();
+    
+    if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+      websocketRef.current.send(JSON.stringify({ type: "interrupt" }));
+    }
+  }, [clearAudioQueue]);
+  
+  useEffect(() => {
+    return () => {
+      stopSession();
+    };
+  }, [stopSession]);
+  
+  const contextValue: SessionContextType = {
+    isSessionActive,
+    isRecording,
+    isConnecting,
+    isProcessing,
+    transcripts,
+    responses,
+    sessionId,
+    websocket: websocketRef.current,
+    streamController: streamControllerRef.current,
+    greeting,
+    startSession,
+    stopSession,
+    startRecording,
+    stopRecording,
+    clearSession,
+    interruptResponse,
+    useHttpStreaming,
+    setUseHttpStreaming,
+  };
+  
+  return (
+    <SessionContext.Provider value={contextValue}>
+      {children}
+    </SessionContext.Provider>
+  );
+};
 
-
+export const useSession = () => {
+  const context = useContext(SessionContext);
+  if (context === undefined) {
+    throw new Error("useSession must be used within a SessionProvider");
+  }
+  return context;
+};
