@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
-import { Mic, MicOff, Play, Square } from "lucide-react";
+import { Mic, MicOff, Play, Square, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -15,7 +15,8 @@ const AudioRecorder: React.FC = () => {
     startSession, 
     stopSession, 
     startRecording, 
-    stopRecording 
+    stopRecording,
+    interruptResponse
   } = useSession();
   
   const { toast } = useToast();
@@ -87,6 +88,12 @@ const AudioRecorder: React.FC = () => {
     }
   };
   
+  // Handle interrupt button click
+  const handleInterruptClick = () => {
+    console.log("Interrupting response");
+    interruptResponse();
+  };
+  
   return (
     <div className="w-full flex flex-col items-center space-y-6 py-4">
       {/* Greeting Message */}
@@ -130,8 +137,21 @@ const AudioRecorder: React.FC = () => {
         )}
       </div>
       
-      {/* Single Button UI */}
-      <div className="flex items-center justify-center">
+      {/* Control Buttons */}
+      <div className="flex items-center justify-center gap-4">
+        {/* Interrupt Button - Only show when session is active */}
+        {isSessionActive && (
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-12 w-12 rounded-full"
+            onClick={handleInterruptClick}
+          >
+            <XCircle className="h-6 w-6 text-destructive" />
+          </Button>
+        )}
+        
+        {/* Main Talk Button */}
         <Button
           variant={isRecording ? "destructive" : "default"}
           size="icon"

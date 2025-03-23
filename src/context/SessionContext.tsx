@@ -34,6 +34,7 @@ interface SessionContextType {
   startRecording: () => void;
   stopRecording: () => void;
   clearSession: () => void;
+  interruptResponse: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -50,7 +51,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
   const [greeting, setGreeting] = useState<string | null>(null);
-  const [receiveUrl, setReceiveUrl] = useState<string | null>(null);
   
   const websocketRef = useRef<WebSocket | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -58,64 +58,82 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   
-  // Setup audio streaming from server
+  // Setup audio player for processing WebSocket audio responses
   useEffect(() => {
-    if (receiveUrl && isSessionActive) {
-      console.log("Setting up EventSource for audio responses at:", receiveUrl);
-      
-      // Create an EventSource to handle server-sent events for audio responses
-      const eventSource = new EventSource(receiveUrl);
-      
-      eventSource.onopen = () => {
-        console.log("EventSource connection opened");
-      };
-      
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("Received message from server:", data);
+    audioPlayerRef.current = new Audio();
+    
+    return () => {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.src = '';
+      }
+    };
+  }, []);
+  
+  // Handle WebSocket messages from server
+  const handleWebSocketMessage = useCallback((event: MessageEvent) => {
+    try {
+      // Check if the message is a text message (JSON)
+      if (typeof event.data === 'string') {
+        const data = JSON.parse(event.data);
+        console.log("Received text message from WebSocket:", data);
+        
+        if (data.text) {
+          // Create a new response object
+          const newResponse: Response = {
+            id: `resp-${Date.now()}`,
+            text: data.text,
+            type: data.type || "main",
+            timestamp: Date.now(),
+          };
           
-          if (data.text) {
-            // Create a new response object
-            const newResponse: Response = {
-              id: `resp-${Date.now()}`,
-              text: data.text,
-              audio_url: data.audio_url,
-              type: data.type || "main",
-              timestamp: Date.now(),
-            };
-            
-            setResponses(prev => [...prev, newResponse]);
-          }
-          
-          if (data.transcript) {
-            // Create a new transcript object
-            const newTranscript: Transcript = {
-              id: `trans-${Date.now()}`,
-              text: data.transcript,
-              is_final: data.is_final || false,
-              timestamp: Date.now(),
-            };
-            
-            setTranscripts(prev => [...prev, newTranscript]);
-          }
-        } catch (error) {
-          console.error("Error processing server message:", error);
+          setResponses(prev => [...prev, newResponse]);
         }
-      };
-      
-      eventSource.onerror = (error) => {
-        console.error("EventSource error:", error);
-      };
-      
-      // Clean up EventSource on component unmount or when session ends
-      return () => {
-        console.log("Closing EventSource connection");
-        eventSource.close();
-      };
+        
+        if (data.transcript) {
+          // Create a new transcript object
+          const newTranscript: Transcript = {
+            id: `trans-${Date.now()}`,
+            text: data.transcript,
+            is_final: data.is_final || false,
+            timestamp: Date.now(),
+          };
+          
+          setTranscripts(prev => [...prev, newTranscript]);
+        }
+      }
+      // Handle binary audio data
+      else if (event.data instanceof Blob) {
+        console.log("Received binary audio data from WebSocket:", event.data.size, "bytes");
+        
+        // Create a URL for the audio blob
+        const audioUrl = URL.createObjectURL(event.data);
+        
+        // Add a response with the audio URL
+        const newResponse: Response = {
+          id: `audio-${Date.now()}`,
+          text: "Audio response received",
+          audio_url: audioUrl,
+          type: "main",
+          timestamp: Date.now(),
+        };
+        
+        setResponses(prev => [...prev, newResponse]);
+        
+        // Play the audio if the audio element exists
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.src = audioUrl;
+          audioPlayerRef.current.play().catch(error => {
+            console.error("Error playing audio:", error);
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error processing WebSocket message:", error);
     }
-  }, [receiveUrl, isSessionActive]);
+  }, []);
   
   const startSession = async () => {
     if (!accessToken) {
@@ -138,7 +156,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           "Authorization": `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ 
-          user_id: user?.phone_number,
+          user_id: user?.phone_number || user?.id,
           user_name: user?.name 
         }),
       });
@@ -150,38 +168,76 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       const data = await response.json();
       console.log("Session created response:", data);
-      setSessionId(data.session_id);
       
-      // Store the receive URL for streaming audio responses
-      if (data.receive_url) {
-        // Make sure we're using the exact URL format from the server
-        setReceiveUrl(data.receive_url);
-        console.log("Receive URL set:", data.receive_url);
-      } else {
-        console.error("No receive_url in response:", data);
+      // Check if session_id is in the response
+      if (!data.session_id) {
+        throw new Error("No session ID returned from server");
       }
       
-      setIsSessionActive(true);
-      setIsConnecting(false);
+      setSessionId(data.session_id);
       
-      // Set the greeting message with the user's name
-      const userName = user?.name || "there";
-      setGreeting(`Hello ${userName}, how are you doing today?`);
+      // Connect to WebSocket with the session ID and user ID
+      const userId = user?.phone_number || user?.id;
+      if (!userId) {
+        throw new Error("User ID not available");
+      }
       
-      // Add the greeting as a response
-      const greetingResponse: Response = {
-        id: `greeting-${Date.now()}`,
-        text: `Hello ${userName}, how are you doing today?`,
-        type: "main",
-        timestamp: Date.now(),
+      // Check if there's a websocket_url in the response, otherwise construct one
+      const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(userId, data.session_id);
+      console.log("Connecting to WebSocket URL:", wsUrl);
+      
+      // Create the WebSocket connection
+      const ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        console.log("WebSocket connection established");
+        setIsSessionActive(true);
+        setIsConnecting(false);
+        
+        // Set the greeting message with the user's name
+        const userName = user?.name || "there";
+        setGreeting(`Hello ${userName}, how are you doing today?`);
+        
+        // Add the greeting as a response
+        const greetingResponse: Response = {
+          id: `greeting-${Date.now()}`,
+          text: `Hello ${userName}, how are you doing today?`,
+          type: "main",
+          timestamp: Date.now(),
+        };
+        
+        setResponses(prev => [...prev, greetingResponse]);
+        
+        toast({
+          title: "Session Started",
+          description: "Audio streaming session is now active.",
+        });
       };
       
-      setResponses(prev => [...prev, greetingResponse]);
+      ws.onmessage = handleWebSocketMessage;
       
-      toast({
-        title: "Session Started",
-        description: "Audio streaming session is now active.",
-      });
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        toast({
+          title: "Connection Error",
+          description: "Error with audio streaming connection.",
+          variant: "destructive",
+        });
+      };
+      
+      ws.onclose = () => {
+        console.log("WebSocket connection closed");
+        if (isSessionActive) {
+          setIsSessionActive(false);
+          
+          toast({
+            title: "Connection Closed",
+            description: "Audio streaming session has ended.",
+          });
+        }
+      };
+      
+      websocketRef.current = ws;
       
     } catch (error) {
       setIsConnecting(false);
@@ -196,7 +252,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
   
   const stopSession = async () => {
-    if (!sessionId || !accessToken) return;
+    if (!sessionId) return;
     
     try {
       if (isRecording) {
@@ -209,6 +265,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         audioStreamRef.current = null;
       }
       
+      // Close WebSocket connection
       if (websocketRef.current) {
         websocketRef.current.close();
         websocketRef.current = null;
@@ -219,15 +276,23 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         audioContextRef.current.close();
       }
       
-      await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-        },
-      });
+      // Only if we have a URL to end the session
+      if (accessToken) {
+        try {
+          await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+            },
+          });
+        } catch (endError) {
+          console.error("Error ending session via API:", endError);
+          // Continue with cleanup even if API call fails
+        }
+      }
       
       setIsSessionActive(false);
-      setReceiveUrl(null);
+      setSessionId(null);
       
       toast({
         title: "Session Ended",
@@ -245,7 +310,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
   
   const startRecording = useCallback(async () => {
-    if (!isSessionActive || isRecording) return;
+    if (!isSessionActive || isRecording || !websocketRef.current) return;
     
     try {
       console.log("Attempting to access microphone...");
@@ -261,48 +326,24 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       audioChunksRef.current = [];
       
       mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && sessionId && accessToken) {
-          audioChunksRef.current.push(event.data);
-          
-          try {
-            console.log(`Sending audio chunk of size: ${event.data.size} bytes to ${ENDPOINTS.SEND_AUDIO_CHUNK}`);
-            
-            // Create a FormData object to send the audio chunk
-            const formData = new FormData();
-            formData.append('audio', new Blob([event.data], { type: 'audio/webm' }));
-            formData.append('session_id', sessionId);
-            
-            const response = await fetch(ENDPOINTS.SEND_AUDIO_CHUNK, {
-              method: 'POST',
-              headers: {
-                "Authorization": `Bearer ${accessToken}`,
-              },
-              body: formData
-            });
-            
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`Error sending audio chunk: ${response.status}`, errorText);
-              throw new Error(`Error sending audio chunk: ${response.status}`);
-            }
-            
-            const responseData = await response.json();
-            console.log("Audio chunk sent successfully, response:", responseData);
-          } catch (error) {
-            console.error("Error sending audio chunk:", error);
-          }
+        if (event.data.size > 0 && websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+          // Instead of collecting chunks, send them directly over WebSocket
+          console.log(`Sending audio chunk of size: ${event.data.size} bytes via WebSocket`);
+          websocketRef.current.send(event.data);
         } else {
-          console.log("No audio data or missing session ID/token", {
+          console.log("Cannot send audio:", {
             dataSize: event.data.size,
-            sessionId,
-            hasToken: !!accessToken
+            wsExists: !!websocketRef.current,
+            wsState: websocketRef.current?.readyState
           });
         }
       };
       
       mediaRecorder.onstop = () => {
         console.log("Media recorder stopped");
-        stream.getTracks().forEach(track => track.stop());
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
       };
       
       // Use a smaller time slice for more frequent data sending (250ms)
@@ -319,7 +360,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive",
       });
     }
-  }, [isSessionActive, isRecording, sessionId, accessToken, toast]);
+  }, [isSessionActive, isRecording, toast]);
   
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
@@ -329,6 +370,19 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Recording stopped");
     }
   }, [isRecording]);
+  
+  // Function to interrupt the current response
+  const interruptResponse = useCallback(() => {
+    if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+      console.log("Sending interrupt command");
+      websocketRef.current.send(JSON.stringify({ command: "interrupt" }));
+      
+      // Stop playing any current audio
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+    }
+  }, []);
   
   const clearSession = useCallback(() => {
     if (transcripts.length > 0) {
@@ -343,10 +397,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (greeting !== null) {
       setGreeting(null);
     }
-    if (receiveUrl !== null) {
-      setReceiveUrl(null);
-    }
-  }, [transcripts.length, responses.length, sessionId, greeting, receiveUrl]);
+  }, [transcripts.length, responses.length, sessionId, greeting]);
   
   return (
     <SessionContext.Provider
@@ -365,6 +416,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         startRecording,
         stopRecording,
         clearSession,
+        interruptResponse,
       }}
     >
       {children}
