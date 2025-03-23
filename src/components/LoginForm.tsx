@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, Loader2, Phone } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const LoginForm: React.FC = () => {
@@ -27,11 +27,9 @@ const LoginForm: React.FC = () => {
     }
     
     try {
-      // Use the dedicated login function instead of register
       const reqId = await login(phoneNumber, countryCode);
       
       if (reqId) {
-        // Navigate to the OTP verification page with the necessary data
         navigate("/verify-otp", {
           state: {
             phoneNumber,
