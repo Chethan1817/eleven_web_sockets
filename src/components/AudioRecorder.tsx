@@ -42,7 +42,8 @@ const AudioRecorder: React.FC = () => {
   
   // Check microphone permissions
   useEffect(() => {
-    if (isSessionActive && micPermission === null) {
+    if ((isSessionActive || micPermission === null) && navigator.mediaDevices) {
+      console.log("Checking microphone permissions...");
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
           console.log("Microphone permission granted");

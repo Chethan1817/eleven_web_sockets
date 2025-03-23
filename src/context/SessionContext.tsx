@@ -129,6 +129,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     try {
       setIsConnecting(true);
+      console.log("Starting new session with API URL:", ENDPOINTS.CREATE_AUDIO_SESSION);
       
       const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
         method: "POST",
@@ -153,6 +154,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       // Store the receive URL for streaming audio responses
       if (data.receive_url) {
+        // Make sure we're using the exact URL format from the server
         setReceiveUrl(data.receive_url);
         console.log("Receive URL set:", data.receive_url);
       } else {
@@ -184,6 +186,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (error) {
       setIsConnecting(false);
       const errorMessage = error instanceof Error ? error.message : "Failed to start session";
+      console.error("Session start error:", errorMessage);
       toast({
         title: "Session Error",
         description: errorMessage,
@@ -262,7 +265,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           audioChunksRef.current.push(event.data);
           
           try {
-            console.log(`Sending audio chunk of size: ${event.data.size} bytes`);
+            console.log(`Sending audio chunk of size: ${event.data.size} bytes to ${ENDPOINTS.SEND_AUDIO_CHUNK}`);
             
             // Create a FormData object to send the audio chunk
             const formData = new FormData();
@@ -283,7 +286,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               throw new Error(`Error sending audio chunk: ${response.status}`);
             }
             
-            console.log("Audio chunk sent successfully");
+            const responseData = await response.json();
+            console.log("Audio chunk sent successfully, response:", responseData);
           } catch (error) {
             console.error("Error sending audio chunk:", error);
           }

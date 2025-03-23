@@ -15,12 +15,13 @@ export const ENDPOINTS = {
   VERIFY_OTP: `${API_BASE_URL}/users/verify_otp/`,
   
   // Session endpoints
-  CREATE_AUDIO_SESSION: `${API_BASE_URL}/api/letta/audio_streaming_session`,
-  END_AUDIO_SESSION: (sessionId: string) => `${API_BASE_URL}/api/letta/end_audio_session/${sessionId}/`,
+  CREATE_AUDIO_SESSION: `${API_BASE_URL}/letta/audio_streaming_session/`,
+  END_AUDIO_SESSION: (sessionId: string) => `${API_BASE_URL}/letta/end_audio_session/${sessionId}/`,
   
   // Audio streaming endpoints
-  SEND_AUDIO_CHUNK: `${API_BASE_URL}/api/letta/audio_streaming/send`,
+  SEND_AUDIO_CHUNK: `${API_BASE_URL}/letta/audio_streaming/send/`,
+  RECEIVE_AUDIO_STREAM: `${API_BASE_URL}/letta/audio_streaming/receive/`,
   
   // Chat endpoint
-  TEXT_CHAT: `${API_BASE_URL}/api/letta/chat`,
+  TEXT_CHAT: `${API_BASE_URL}/letta/chat/`,
 };
