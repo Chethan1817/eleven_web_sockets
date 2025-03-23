@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
-import { ENDPOINTS } from "@/config";
+import { ENDPOINTS, DEBUG_MODE } from "@/config";
 
 interface Transcript {
   id: string;
