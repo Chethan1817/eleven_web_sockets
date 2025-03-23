@@ -70,7 +70,6 @@ export function startHttpStreaming(
   // Inform that we're attempting to connect
   onConnectionStatus("connecting", "Establishing HTTP stream connection");
   
-  // Start a fetch request but don't await it - we'll handle it asynchronously
   fetch(streamUrl, { 
     signal: controller.signal,
     headers: {
@@ -102,8 +101,8 @@ export function startHttpStreaming(
     const decoder = new TextDecoder();
     let buffer = '';
     
-    // Process chunks function
-    const processStreamChunks = async () => {
+    // This function actively consumes the stream to prevent auto-abortion
+    async function readStream() {
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -134,26 +133,21 @@ export function startHttpStreaming(
           });
         }
       } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error.name === 'AbortError') {
           console.log("HTTP stream aborted by user");
         } else {
           console.error("Error reading from stream:", error);
-          onConnectionStatus("error", `Stream error: ${error instanceof Error ? error.message : String(error)}`);
+          onConnectionStatus("error", `Stream error: ${error.message}`);
         }
       }
-    };
+    }
     
-    // Start consuming the stream
-    processStreamChunks().catch(error => {
-      if (error instanceof Error && error.name !== 'AbortError') {
-        console.error("Stream processing failed:", error);
-        onConnectionStatus("error", `Stream processing error: ${error.message}`);
-      }
-    });
+    // Start consuming the stream immediately to prevent browser auto-abortion
+    readStream();
   })
   .catch(error => {
     // Only log non-abort errors (abort is expected during cleanup)
-    if (error instanceof Error && error.name !== 'AbortError') {
+    if (error.name !== 'AbortError') {
       console.error("HTTP stream connection error:", error);
       onConnectionStatus("error", `Connection error: ${error.message}`);
     }
