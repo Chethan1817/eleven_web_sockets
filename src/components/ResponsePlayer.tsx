@@ -3,9 +3,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { useSession } from "@/context/SessionContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Volume2, VolumeX, PlayCircle, Code } from "lucide-react";
+import { Volume2, VolumeX, PlayCircle, Code, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const ResponsePlayer: React.FC = () => {
   const { responses, isSessionActive } = useSession();
@@ -28,12 +29,13 @@ const ResponsePlayer: React.FC = () => {
     const audio = new Audio();
     
     audio.addEventListener('ended', () => {
+      console.log("Audio playback ended in ResponsePlayer");
       setCurrentPlayingId(null);
     });
     
     audio.addEventListener('error', (e) => {
-      // Fix: Cast to HTMLMediaElement to access error property
-      const mediaElement = e.currentTarget as HTMLMediaElement;
+      // Use proper type casting for the event target
+      const mediaElement = e.target as HTMLMediaElement;
       const error = mediaElement.error;
       let errorMsg = "Unknown audio error";
       
@@ -54,7 +56,12 @@ const ResponsePlayer: React.FC = () => {
         }
       }
       
-      console.error("Audio playback error:", errorMsg, error);
+      console.error("Audio playback error in ResponsePlayer:", {
+        error: errorMsg,
+        mediaError: error,
+        src: mediaElement.src
+      });
+      
       setAudioPlaybackError(errorMsg);
       setCurrentPlayingId(null);
     });
@@ -179,6 +186,16 @@ const ResponsePlayer: React.FC = () => {
               </Button>
             </div>
           </div>
+          
+          {audioPlaybackError && (
+            <Alert variant="destructive" className="mb-4">
+              <Info className="h-4 w-4" />
+              <AlertTitle>Audio Playback Issue</AlertTitle>
+              <AlertDescription>
+                {audioPlaybackError}. Try a different browser or check your audio format.
+              </AlertDescription>
+            </Alert>
+          )}
           
           {responses.map((response) => (
             <div

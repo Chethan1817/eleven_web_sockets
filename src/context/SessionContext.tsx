@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -58,7 +59,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const audioQueueRef = useRef<{url: string, id: string}[]>([]);
+  const audioQueueRef = useRef<{url: string, id: string, blob: Blob}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   
@@ -66,12 +67,24 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const audioPlayer = new Audio();
     
     audioPlayer.addEventListener('ended', () => {
+      console.log("Audio playback ended");
       isPlayingRef.current = false;
       playNextInQueue();
     });
     
     audioPlayer.addEventListener('error', (e) => {
-      console.error("Audio player error:", e);
+      // Log the full error details
+      const target = e.target as HTMLAudioElement;
+      const errorCode = target.error ? target.error.code : 'unknown';
+      const errorMessage = target.error ? target.error.message : 'unknown';
+      
+      console.error("Audio player error:", {
+        event: e,
+        errorCode,
+        errorMessage,
+        currentSrc: target.currentSrc
+      });
+      
       isPlayingRef.current = false;
       playNextInQueue();
     });
@@ -101,17 +114,29 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (next) {
         console.log("Playing next audio in queue:", next.id);
         isPlayingRef.current = true;
-        audioPlayerRef.current.src = next.url;
         
-        audioPlayerRef.current.play()
-          .then(() => {
-            console.log("Audio playback started successfully");
-          })
-          .catch(error => {
-            console.error("Error playing audio:", error);
-            isPlayingRef.current = false;
-            setTimeout(playNextInQueue, 100);
-          });
+        try {
+          // Create a new object URL each time to avoid caching issues
+          URL.revokeObjectURL(next.url);
+          const newUrl = URL.createObjectURL(next.blob);
+          
+          audioPlayerRef.current.src = newUrl;
+          
+          audioPlayerRef.current.play()
+            .then(() => {
+              console.log("Audio playback started successfully");
+            })
+            .catch(error => {
+              console.error("Error playing audio:", error);
+              isPlayingRef.current = false;
+              // Try next audio after delay
+              setTimeout(playNextInQueue, 100);
+            });
+        } catch (err) {
+          console.error("Exception in audio playback:", err);
+          isPlayingRef.current = false;
+          setTimeout(playNextInQueue, 100);
+        }
       }
     }
   }, []);
@@ -146,17 +171,22 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
       else if (event.data instanceof Blob) {
-        console.log("Received binary audio data from WebSocket:", event.data.size, "bytes");
+        const audioSize = event.data.size;
+        console.log(`Received binary audio data from WebSocket: ${audioSize} bytes`);
         
+        // Extract Content-Type from the blob if possible, or use a default
+        // Some browsers may handle audio/mpeg better than audio/webm
         const contentType = event.data.type || 'audio/mpeg';
         const blobWithType = new Blob([event.data], { type: contentType });
+        
+        console.log(`Processing audio blob with type: ${contentType}`);
         
         const audioUrl = URL.createObjectURL(blobWithType);
         const responseId = `audio-${Date.now()}`;
         
         const newResponse: Response = {
           id: responseId,
-          text: "Audio response received",
+          text: `Audio response received (${audioSize} bytes, format: ${contentType})`,
           audio_url: audioUrl,
           type: "main",
           timestamp: Date.now(),
@@ -164,7 +194,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         
         setResponses(prev => [...prev, newResponse]);
         
-        audioQueueRef.current.push({url: audioUrl, id: responseId});
+        // Store the blob in the queue for better memory management
+        audioQueueRef.current.push({
+          url: audioUrl, 
+          id: responseId,
+          blob: blobWithType
+        });
         
         if (!isPlayingRef.current) {
           playNextInQueue();
