@@ -1,3 +1,4 @@
+
 /**
  * Utility functions for HTTP streaming audio communication
  */
@@ -97,8 +98,7 @@ export function startHttpStreaming(
         throw new Error("ReadableStream not supported");
       }
       
-      onConnectionStatus("connected", "HTTP stream connected");
-      console.log("HTTP stream connected successfully");
+      console.log("[Stream] HTTP stream connected, beginning to read data");
       
       // Get a reader to consume the stream
       const reader = response.body.getReader();
@@ -120,16 +120,20 @@ export function startHttpStreaming(
           
           // Process the chunk
           const chunk = decoder.decode(value, { stream: true });
-          console.log(`[Stream] Received chunk: ${chunk.length} bytes`);
+          console.log(`[Stream] Raw chunk received: ${chunk.length} bytes`);
+          console.log("[Stream] Raw chunk content:", chunk);
+          
           buffer += chunk;
           
           // Process any complete messages in the buffer
           const { processed, remainder } = processBuffer(buffer);
           buffer = remainder;
           
+          console.log(`[Stream] Processed ${processed.length} messages, ${buffer.length} bytes remaining in buffer`);
+          
           // Handle each complete message
           processed.forEach(message => {
-            console.log("[Stream] Incoming message:", message);
+            console.log("[Stream] Processing message:", message);
             handleStreamMessage(
               message, 
               onTranscript, 
@@ -149,6 +153,9 @@ export function startHttpStreaming(
           }
         }
       }
+      
+      onConnectionStatus("connected", "HTTP stream connected");
+      console.log("HTTP stream connected successfully");
     } catch (error) {
       // Only log non-abort errors
       if (error.name !== 'AbortError') {
@@ -171,15 +178,20 @@ function processBuffer(buffer: string): {
   const processed: StreamMessage[] = [];
   let remainder = buffer;
   
+  console.log("[Stream] Processing buffer:", buffer);
+  
   // Process each line that ends with a newline
   while (remainder.includes('\n')) {
     const newlinePos = remainder.indexOf('\n');
     const message = remainder.substring(0, newlinePos);
     
+    console.log("[Stream] Found message in buffer:", message);
+    
     if (message.trim().length > 0) {
       try {
         // Try to parse as JSON
         const msgObj = JSON.parse(message);
+        console.log("[Stream] Successfully parsed JSON:", msgObj);
         
         if (msgObj.type === 'audio' && msgObj.data) {
           // This is audio data that our backend has already extracted
@@ -212,7 +224,7 @@ async function handleStreamMessage(
   onResponse: (text: string, audioData?: ArrayBuffer) => void,
   onConnectionStatus: (status: string, message?: string) => void
 ) {
-  console.log(`Received ${message.type} message:`, message);
+  console.log(`[Stream] Handling ${message.type} message:`, message);
   
   switch (message.type) {
     case 'audio':
@@ -263,6 +275,7 @@ async function handleStreamMessage(
       break;
       
     case 'connection_status':
+      console.log("[Stream] Connection status update:", message.status, message.message);
       onConnectionStatus(message.status, message.message);
       break;
       

@@ -420,31 +420,37 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }]);
           },
           (status: string, message?: string) => {
-            console.log(`Connection status: ${status} - ${message || ""}`);
+            console.log(`Connection status update: ${status} - ${message || ""}`);
             
             if (status === "connected") {
               console.log("Session connected successfully");
               setIsConnecting(false);
               setIsSessionActive(true);
               sessionActiveRef.current = true;
+              
+              toast({
+                title: "Connection Established",
+                description: "HTTP streaming connection is active.",
+                variant: "default"
+              });
             } else if (status === "disconnected" || status === "error") {
               console.log(`Session ${status}: ${message}`);
               if (sessionActiveRef.current) {
                 setIsConnecting(false);
                 setIsSessionActive(false);
                 sessionActiveRef.current = false;
+                
+                toast({
+                  title: `Connection ${status === "error" ? "Error" : "Closed"}`,
+                  description: message || `The streaming connection was ${status}.`,
+                  variant: status === "error" ? "destructive" : "default"
+                });
               }
             }
           }
         );
         
         streamControllerRef.current = controller;
-        
-        toast({
-          title: "Session Started",
-          description: "Connected using HTTP streaming.",
-          variant: "default"
-        });
       } else {
         const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
           method: "POST",
