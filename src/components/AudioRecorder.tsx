@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
-import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2, Globe, Wifi } from "lucide-react";
+import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2, Globe, Wifi, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { Switch } from "@/components/ui/switch";
@@ -28,6 +28,7 @@ const AudioRecorder: React.FC = () => {
   const [showGreeting, setShowGreeting] = useState(false);
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
   const [isAudioDetected, setIsAudioDetected] = useState(false);
+  const [disabledReason, setDisabledReason] = useState<string | null>(null);
   
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -83,6 +84,25 @@ const AudioRecorder: React.FC = () => {
     }
   }, [isSessionActive, greeting]);
   
+  useEffect(() => {
+    if (micPermission === false) {
+      setDisabledReason("Microphone access is denied");
+    } else if (isConnecting) {
+      setDisabledReason("Connecting to server...");
+    } else if (!isSessionActive) {
+      setDisabledReason(null); // Button is enabled to start session
+    } else {
+      setDisabledReason(null); // Button is enabled for recording
+    }
+    
+    console.log("Button state updated:", {
+      isSessionActive,
+      isConnecting,
+      micPermission,
+      isDisabled: micPermission === false || isConnecting
+    });
+  }, [isSessionActive, isConnecting, micPermission]);
+  
   const handleTalkButtonClick = () => {
     if (!isSessionActive) {
       console.log("Starting new session");
@@ -113,6 +133,10 @@ const AudioRecorder: React.FC = () => {
         variant: "destructive",
       });
     }
+  };
+  
+  const isTalkButtonDisabled = (): boolean => {
+    return isConnecting || micPermission === false;
   };
   
   return (
@@ -209,10 +233,12 @@ const AudioRecorder: React.FC = () => {
             "h-20 w-20 rounded-full shadow-lg transition-all duration-300",
             isRecording && isAudioDetected ? "animate-pulse ring-2 ring-green-500" : 
             isRecording ? "animate-pulse" : "",
-            isConnecting && "opacity-70"
+            isConnecting && "opacity-70",
+            isTalkButtonDisabled() && "cursor-not-allowed"
           )}
           onClick={handleTalkButtonClick}
-          disabled={isConnecting || micPermission === false}
+          disabled={isTalkButtonDisabled()}
+          title={disabledReason || "Click to talk"}
         >
           {!isSessionActive ? (
             <Play className="h-8 w-8" />
@@ -223,6 +249,13 @@ const AudioRecorder: React.FC = () => {
           )}
         </Button>
       </div>
+      
+      {disabledReason && (
+        <div className="text-sm text-amber-500 font-medium flex items-center mt-2">
+          <AlertTriangle className="h-4 w-4 mr-1" />
+          {disabledReason}
+        </div>
+      )}
       
       {isSessionActive && (
         <Button
