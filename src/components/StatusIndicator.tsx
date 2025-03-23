@@ -3,7 +3,7 @@ import React from "react";
 import { useSession } from "@/context/SessionContext";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Activity, Loader2, CheckCircle2, Clock, Radio, AlertTriangle } from "lucide-react";
+import { Activity, Loader2, CheckCircle2, Clock, Radio, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 
 const StatusIndicator: React.FC = () => {
   const { 
@@ -25,6 +25,14 @@ const StatusIndicator: React.FC = () => {
   React.useEffect(() => {
     if (websocket) {
       console.log(`WebSocket state: ${wsState} (${["CONNECTING", "OPEN", "CLOSING", "CLOSED"][wsState]})`);
+      
+      // Log all open event listeners for debugging
+      console.log("WebSocket event handlers:", {
+        onopen: !!websocket.onopen,
+        onmessage: !!websocket.onmessage,
+        onerror: !!websocket.onerror,
+        onclose: !!websocket.onclose
+      });
     }
   }, [wsState, websocket]);
   
@@ -50,7 +58,7 @@ const StatusIndicator: React.FC = () => {
     return (
       <Badge variant="outline" className="bg-amber-500/10 text-amber-600 px-3 py-1">
         <AlertTriangle className="h-3 w-3 mr-1" />
-        <span>Connection Issue</span>
+        <span>Connection Issue {wsState !== -1 ? `(State: ${wsState})` : ""}</span>
       </Badge>
     );
   }
@@ -76,16 +84,16 @@ const StatusIndicator: React.FC = () => {
   if (isSessionActive && wsConnected) {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-600 px-3 py-1">
-        <Radio className="h-3 w-3 mr-1 animate-pulse" />
+        <Wifi className="h-3 w-3 mr-1" />
         <span>Connected</span>
       </Badge>
     );
   }
   
   return (
-    <Badge variant="outline" className="bg-green-500/10 text-green-600 px-3 py-1">
-      <CheckCircle2 className="h-3 w-3 mr-1" />
-      <span>Ready</span>
+    <Badge variant="outline" className="bg-secondary/50 px-3 py-1">
+      <WifiOff className="h-3 w-3 mr-1" />
+      <span>Disconnected</span>
     </Badge>
   );
 };

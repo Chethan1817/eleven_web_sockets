@@ -3,8 +3,12 @@
  * Application configuration settings
  */
 
-// API base URLs
-export const API_BASE_URL = "http://localhost:8000";
+// API base URLs - handle both HTTP and HTTPS protocols
+export const API_BASE_URL = window.location.protocol === 'https:' 
+  ? "https://localhost:8000"  // Use HTTPS in production
+  : "http://localhost:8000";  // Use HTTP in development
+
+// Ensure WebSocket protocol matches HTTP protocol (ws for http, wss for https)
 export const WEBSOCKET_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 // API endpoints

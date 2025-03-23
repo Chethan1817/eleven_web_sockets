@@ -112,34 +112,42 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       if (typeof event.data === 'string') {
         console.log("📥 RECEIVED FROM SERVER (text data):", event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
-        const data = JSON.parse(event.data);
-        console.log("📥 PARSED JSON DATA:", data);
         
-        if (data.type === "connection_status" && data.status === "connected") {
-          console.log("Connection confirmed by server");
-        }
-        
-        if (data.text) {
-          const newResponse: Response = {
-            id: `resp-${Date.now()}`,
-            text: data.text,
-            type: data.type || "main",
-            timestamp: Date.now(),
-            raw_data: data
-          };
+        try {
+          const data = JSON.parse(event.data);
+          console.log("📥 PARSED JSON DATA:", data);
           
-          setResponses(prev => [...prev, newResponse]);
-        }
-        
-        if (data.transcript) {
-          const newTranscript: Transcript = {
-            id: `trans-${Date.now()}`,
-            text: data.transcript,
-            is_final: data.is_final || false,
-            timestamp: Date.now(),
-          };
+          if (data.type === "connection_status" && data.status === "connected") {
+            console.log("Connection confirmed by server");
+            setIsConnecting(false);
+            setIsSessionActive(true);
+          }
           
-          setTranscripts(prev => [...prev, newTranscript]);
+          if (data.text) {
+            const newResponse: Response = {
+              id: `resp-${Date.now()}`,
+              text: data.text,
+              type: data.type || "main",
+              timestamp: Date.now(),
+              raw_data: data
+            };
+            
+            setResponses(prev => [...prev, newResponse]);
+          }
+          
+          if (data.transcript) {
+            const newTranscript: Transcript = {
+              id: `trans-${Date.now()}`,
+              text: data.transcript,
+              is_final: data.is_final || false,
+              timestamp: Date.now(),
+            };
+            
+            setTranscripts(prev => [...prev, newTranscript]);
+          }
+        } catch (err) {
+          console.warn("Failed to parse WebSocket text message as JSON:", err);
+          console.log("Raw message content:", event.data);
         }
       }
       else if (event.data instanceof Blob) {
@@ -188,6 +196,117 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [playNextInQueue]);
   
+  const createWebSocketConnection = useCallback((url: string, userId: string, sessionId: string) => {
+    console.log("Creating WebSocket connection to:", url);
+    
+    if (websocketRef.current && websocketRef.current.readyState !== WebSocket.CLOSED) {
+      console.log("Closing existing WebSocket connection");
+      websocketRef.current.close();
+    }
+    
+    const ws = new WebSocket(url);
+    console.log("WebSocket object created with readyState:", ws.readyState, 
+      ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][ws.readyState]);
+    
+    const connectionTimeout = setTimeout(() => {
+      console.log("WebSocket connection timeout after 15 seconds");
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.error("WebSocket connection timeout");
+        ws.close();
+        setIsConnecting(false);
+        toast({
+          title: "Connection Timeout",
+          description: "Failed to establish WebSocket connection. Please try again.",
+          variant: "destructive",
+        });
+      }
+    }, 15000); // 15 seconds timeout
+    
+    ws.onopen = () => {
+      clearTimeout(connectionTimeout);
+      console.log(`📡 WebSocket connection established (readyState: ${ws.readyState})`);
+      
+      setIsSessionActive(true);
+      setIsConnecting(false);
+      
+      try {
+        const checkMessage = { 
+          type: "connection_check", 
+          message: "Client connected successfully",
+          user_id: userId,
+          session_id: sessionId,
+          timestamp: Date.now() 
+        };
+        ws.send(JSON.stringify(checkMessage));
+        console.log("📤 SENT TO SERVER:", checkMessage);
+      } catch (err) {
+        console.error("Error sending connection check:", err);
+      }
+      
+      const userName = user?.name || "there";
+      setGreeting(`Hello ${userName}, how are you doing today?`);
+      
+      const greetingResponse: Response = {
+        id: `greeting-${Date.now()}`,
+        text: `Hello ${userName}, how are you doing today?`,
+        type: "main",
+        timestamp: Date.now(),
+      };
+      
+      setResponses(prev => [...prev, greetingResponse]);
+      
+      toast({
+        title: "Session Started",
+        description: "Audio streaming session is now active.",
+      });
+    };
+    
+    ws.onmessage = handleWebSocketMessage;
+    
+    ws.onerror = (error) => {
+      clearTimeout(connectionTimeout);
+      console.error("📡 WebSocket error:", error);
+      
+      console.error("Error details:", {
+        type: error.type,
+        message: (error as any).message,
+        target: error.target
+      });
+      
+      setIsConnecting(false);
+      
+      toast({
+        title: "Connection Error",
+        description: "Error with audio streaming connection. Please check console for details.",
+        variant: "destructive",
+      });
+    };
+    
+    ws.onclose = (event) => {
+      clearTimeout(connectionTimeout);
+      console.log(`📡 WebSocket connection closed: Code ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''}`);
+      
+      if (isSessionActive) {
+        setIsSessionActive(false);
+        
+        toast({
+          title: "Connection Closed",
+          description: "Audio streaming session has ended." + (event.reason ? ` Reason: ${event.reason}` : ''),
+        });
+      } else if (isConnecting) {
+        setIsConnecting(false);
+        
+        toast({
+          title: "Connection Failed",
+          description: "Could not establish connection to the audio server." + (event.reason ? ` Reason: ${event.reason}` : ''),
+          variant: "destructive",
+        });
+      }
+    };
+    
+    return ws;
+  }, [handleWebSocketMessage, isSessionActive, setGreeting, setIsConnecting, setIsSessionActive, setResponses, toast, user?.name]);
+  
   const startSession = async () => {
     if (!accessToken) {
       toast({
@@ -220,8 +339,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to create audio session");
+        const errorText = await response.text();
+        console.error("Error response:", errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.detail || `Failed to create audio session (${response.status})`);
+        } catch (e) {
+          throw new Error(`Server error: ${response.status} - ${errorText.substring(0, 100)}`);
+        }
       }
       
       const data = await response.json();
@@ -236,106 +361,28 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(userId, data.session_id);
       console.log("Connecting to WebSocket URL:", wsUrl);
       
-      if (websocketRef.current && websocketRef.current.readyState !== WebSocket.CLOSED) {
-        console.log("Closing existing WebSocket connection");
-        websocketRef.current.close();
-      }
-      
-      const ws = new WebSocket(wsUrl);
-      console.log("WebSocket object created with readyState:", ws.readyState, 
-        ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][ws.readyState]);
-      
-      const connectionTimeout = setTimeout(() => {
-        console.log("WebSocket connection timeout after 10 seconds");
-        if (ws.readyState !== WebSocket.OPEN) {
-          console.error("WebSocket connection timeout");
-          ws.close();
-          setIsConnecting(false);
-          toast({
-            title: "Connection Timeout",
-            description: "Failed to establish WebSocket connection. Please try again.",
-            variant: "destructive",
-          });
-        }
-      }, 10000); // 10 seconds timeout
-      
-      ws.onopen = () => {
-        clearTimeout(connectionTimeout);
-        console.log("📡 WebSocket connection established");
-        setIsSessionActive(true);
-        setIsConnecting(false);
-        
-        try {
-          ws.send(JSON.stringify({ 
-            type: "connection_check", 
-            message: "Client connected successfully",
-            timestamp: Date.now() 
-          }));
-          console.log("📤 SENT CONNECTION CHECK TO SERVER");
-        } catch (err) {
-          console.error("Error sending connection check:", err);
-        }
-        
-        const userName = user?.name || "there";
-        setGreeting(`Hello ${userName}, how are you doing today?`);
-        
-        const greetingResponse: Response = {
-          id: `greeting-${Date.now()}`,
-          text: `Hello ${userName}, how are you doing today?`,
-          type: "main",
-          timestamp: Date.now(),
-        };
-        
-        setResponses(prev => [...prev, greetingResponse]);
-        
-        toast({
-          title: "Session Started",
-          description: "Audio streaming session is now active.",
-        });
-      };
-      
-      ws.onmessage = handleWebSocketMessage;
-      
-      ws.onerror = (error) => {
-        clearTimeout(connectionTimeout);
-        console.error("📡 WebSocket error:", error);
-        setIsConnecting(false);
-        
-        toast({
-          title: "Connection Error",
-          description: "Error with audio streaming connection.",
-          variant: "destructive",
-        });
-      };
-      
-      ws.onclose = (event) => {
-        clearTimeout(connectionTimeout);
-        console.log(`📡 WebSocket connection closed: Code ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''}`);
-        
-        if (isSessionActive) {
-          setIsSessionActive(false);
-          
-          toast({
-            title: "Connection Closed",
-            description: "Audio streaming session has ended.",
-          });
-        } else if (isConnecting) {
-          setIsConnecting(false);
-          
-          toast({
-            title: "Connection Failed",
-            description: "Could not establish connection to the audio server.",
-            variant: "destructive",
-          });
-        }
-      };
-      
+      const ws = createWebSocketConnection(wsUrl, userId, data.session_id);
       websocketRef.current = ws;
+      
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+            console.log("📤 PING sent to keep connection alive");
+          } catch (err) {
+            console.error("Error sending ping:", err);
+            clearInterval(pingInterval);
+          }
+        } else if (ws.readyState !== WebSocket.CONNECTING) {
+          console.log("Clearing ping interval, WebSocket is no longer open");
+          clearInterval(pingInterval);
+        }
+      }, 30000); // 30-second ping interval
       
     } catch (error) {
       setIsConnecting(false);
       const errorMessage = error instanceof Error ? error.message : "Failed to start session";
-      console.error("Session start error:", errorMessage);
+      console.error("Session start error:", errorMessage, error);
       toast({
         title: "Session Error",
         description: errorMessage,
