@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -290,106 +291,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return ws;
   }, [handleWebSocketMessage, toast, isSessionActive, useHttpStreaming, setUseHttpStreaming]);
   
-  const startSession = useCallback(async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to start a session.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    await stopSession();
-    
-    setIsConnecting(true);
-    
-    try {
-      let newSessionId;
-      
-      if (useHttpStreaming) {
-        newSessionId = await createHttpSession(user.id);
-        setSessionId(newSessionId);
-        
-        const controller = await startHttpStreaming(
-          user.id,
-          newSessionId,
-          (transcript) => {
-            if (transcript) {
-              setTranscripts(prev => [...prev, {
-                id: `trans-${Date.now()}`,
-                text: transcript.text,
-                is_final: transcript.is_final || false,
-                timestamp: Date.now()
-              }]);
-            }
-          },
-          (response) => {
-            if (response) {
-              setResponses(prev => [...prev, {
-                id: `resp-${Date.now()}`,
-                text: response.text,
-                type: response.type || "main",
-                timestamp: Date.now(),
-                raw_data: response
-              }]);
-            }
-          },
-          (audioBlobInfo) => {
-            audioQueueRef.current.push({
-              blob: audioBlobInfo.blob,
-              id: `audio-${Date.now()}`,
-              format: audioBlobInfo.format || "auto"
-            });
-            
-            playNextInQueue();
-          }
-        );
-        
-        streamControllerRef.current = controller;
-        setIsConnecting(false);
-        setIsSessionActive(true);
-        
-        toast({
-          title: "Session Started",
-          description: "Connected using HTTP streaming.",
-          variant: "default"
-        });
-      } else {
-        const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
-          },
-          body: JSON.stringify({ user_id: user.id })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        newSessionId = data.session_id;
-        setSessionId(newSessionId);
-        
-        const ws = createWebSocketConnection(user.id, newSessionId);
-        websocketRef.current = ws;
-      }
-    } catch (error) {
-      console.error("Failed to start session:", error);
-      setIsConnecting(false);
-      setIsSessionActive(false);
-      
-      toast({
-        title: "Session Start Failed",
-        description: `Could not start session: ${error instanceof Error ? error.message : "Unknown error"}`,
-        variant: "destructive"
-      });
-    }
-  }, [user, accessToken, stopSession, toast, createWebSocketConnection, playNextInQueue, useHttpStreaming]);
-  
-  const stopSession = useCallback(async () => {
+  // Define stopSession first to resolve the reference error
+  const stopSession = useCallback(async (): Promise<void> => {
     setIsSessionActive(false);
     setIsRecording(false);
     setIsProcessing(false);
@@ -454,9 +357,108 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     
     setSessionId(null);
-    
-    return true;
   }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming]);
+  
+  const startSession = useCallback(async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to start a session.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    await stopSession();
+    
+    setIsConnecting(true);
+    
+    try {
+      let newSessionId;
+      
+      if (useHttpStreaming) {
+        newSessionId = await createHttpSession(user.id);
+        setSessionId(newSessionId);
+        
+        const controller = await startHttpStreaming(
+          user.id,
+          newSessionId,
+          (transcript) => {
+            if (transcript) {
+              setTranscripts(prev => [...prev, {
+                id: `trans-${Date.now()}`,
+                text: transcript.text || "",
+                is_final: transcript.is_final || false,
+                timestamp: Date.now()
+              }]);
+            }
+          },
+          (response) => {
+            if (response) {
+              setResponses(prev => [...prev, {
+                id: `resp-${Date.now()}`,
+                text: response.text || "",
+                type: response.type || "main",
+                timestamp: Date.now(),
+                raw_data: response
+              }]);
+            }
+          },
+          (audioBlobInfo) => {
+            if (audioBlobInfo) {
+              audioQueueRef.current.push({
+                blob: audioBlobInfo.blob,
+                id: `audio-${Date.now()}`,
+                format: audioBlobInfo.format || "auto"
+              });
+              
+              playNextInQueue();
+            }
+          }
+        );
+        
+        streamControllerRef.current = controller;
+        setIsConnecting(false);
+        setIsSessionActive(true);
+        
+        toast({
+          title: "Session Started",
+          description: "Connected using HTTP streaming.",
+          variant: "default"
+        });
+      } else {
+        const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
+          },
+          body: JSON.stringify({ user_id: user.id })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        newSessionId = data.session_id;
+        setSessionId(newSessionId);
+        
+        const ws = createWebSocketConnection(user.id, newSessionId);
+        websocketRef.current = ws;
+      }
+    } catch (error) {
+      console.error("Failed to start session:", error);
+      setIsConnecting(false);
+      setIsSessionActive(false);
+      
+      toast({
+        title: "Session Start Failed",
+        description: `Could not start session: ${error instanceof Error ? error.message : "Unknown error"}`,
+        variant: "destructive"
+      });
+    }
+  }, [user, accessToken, stopSession, toast, createWebSocketConnection, playNextInQueue, useHttpStreaming]);
   
   const startRecording = useCallback(async () => {
     if (!isSessionActive) {
@@ -614,3 +616,4 @@ export const useSession = () => {
   }
   return context;
 };
+
