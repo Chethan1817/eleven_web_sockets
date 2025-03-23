@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useCallback, useEff
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS } from "@/config";
-import { playAudio } from "@/utils/audioUtils";
+import { playAudio, isMP3Format } from "@/utils/audioUtils";
 
 interface Transcript {
   id: string;
