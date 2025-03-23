@@ -74,6 +74,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioQueueRef = useRef<{blob: Blob, id: string, format: "mp3" | "pcm" | "auto"}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
   const sessionActiveRef = useRef<boolean>(false);
+  const isManuallyStoppingRef = useRef<boolean>(false);
   
   const clearAudioQueue = useCallback(() => {
     isPlayingRef.current = false;
@@ -297,7 +298,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
-    console.log("Stopping session...");
+    console.log("Stopping session...", new Error().stack);
+    
+    isManuallyStoppingRef.current = true;
+    
     sessionActiveRef.current = false;
     setIsSessionActive(false);
     setIsRecording(false);
@@ -366,6 +370,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     
     setSessionId(null);
+    
+    setTimeout(() => {
+      isManuallyStoppingRef.current = false;
+    }, 100);
   }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming, isSessionActive]);
   
   const startSession = useCallback(async (): Promise<void> => {
@@ -378,12 +386,16 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
+    isManuallyStoppingRef.current = true;
+    
     if (isSessionActive || sessionActiveRef.current) {
       console.log("Closing existing session before starting a new one");
       await stopSession();
       
       await new Promise(resolve => setTimeout(resolve, 500));
     }
+    
+    isManuallyStoppingRef.current = false;
     
     setIsConnecting(true);
     sessionActiveRef.current = true;
@@ -435,7 +447,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               });
             } else if (status === "disconnected" || status === "error") {
               console.log(`Session ${status}: ${message}`);
-              if (sessionActiveRef.current) {
+              if (sessionActiveRef.current && !isManuallyStoppingRef.current) {
                 setIsConnecting(false);
                 setIsSessionActive(false);
                 sessionActiveRef.current = false;
@@ -452,7 +464,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         
         streamControllerRef.current = controller;
         
-        // Explicitly log the state after setting up the HTTP streaming
         console.log("HTTP streaming setup complete, context state:", {
           sessionId: newSessionId,
           isConnecting: true,
@@ -612,12 +623,17 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   useEffect(() => {
     return () => {
-      stopSession();
+      if (!isManuallyStoppingRef.current) {
+        stopSession();
+      }
     };
   }, [stopSession]);
   
   useEffect(() => {
-    sessionActiveRef.current = isSessionActive;
+    if (sessionActiveRef.current !== isSessionActive && !isManuallyStoppingRef.current) {
+      console.log(`Updating sessionActiveRef from ${sessionActiveRef.current} to ${isSessionActive}`);
+      sessionActiveRef.current = isSessionActive;
+    }
   }, [isSessionActive]);
   
   const contextValue: SessionContextType = {
@@ -641,7 +657,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setUseHttpStreaming,
   };
   
-  // Add a debug log to see what's being provided by the context
   console.log("SessionContext provider rendering with:", {
     isSessionActive,
     isConnecting,
