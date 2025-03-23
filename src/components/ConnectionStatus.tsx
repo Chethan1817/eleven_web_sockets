@@ -16,7 +16,6 @@ const ConnectionStatus: React.FC = () => {
     isSessionActive, 
     isConnecting, 
     hasStreamController: !!streamController,
-    sessionActiveRef: sessionActiveRef?.current,
     renderTime: new Date().toISOString()
   });
   
