@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -111,8 +112,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const handleWebSocketMessage = useCallback(async (event: MessageEvent) => {
     try {
       if (typeof event.data === 'string') {
+        console.log("📥 RECEIVED FROM SERVER (text data):", event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
         const data = JSON.parse(event.data);
-        console.log("📥 RECEIVED FROM SERVER (text):", data);
+        console.log("📥 PARSED JSON DATA:", data);
         
         if (data.text) {
           const newResponse: Response = {
@@ -140,11 +142,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       else if (event.data instanceof Blob) {
         const audioSize = event.data.size;
         
+        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of audio`);
+        
         const isMp3 = await isMP3Format(event.data);
         const audioFormat = isMp3 ? "mp3" : "pcm";
         const audioMimeType = isMp3 ? "audio/mpeg" : "audio/pcm";
         
-        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of ${audioFormat.toUpperCase()} audio`);
+        console.log(`Audio format detected: ${audioFormat.toUpperCase()}`);
         
         const audioBlob = new Blob([event.data], { type: audioMimeType });
         const audioId = `audio-${Date.now()}`;
@@ -235,6 +239,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       
       const ws = new WebSocket(wsUrl);
+      console.log("WebSocket object created with readyState:", ws.readyState, 
+        ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][ws.readyState]);
       
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState !== WebSocket.OPEN) {
@@ -254,6 +260,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log("📡 WebSocket connection established");
         setIsSessionActive(true);
         setIsConnecting(false);
+        
+        // Send an initial ping to test the connection
+        try {
+          ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+          console.log("📤 SENT PING TO SERVER");
+        } catch (err) {
+          console.error("Error sending initial ping:", err);
+        }
         
         const userName = user?.name || "there";
         setGreeting(`Hello ${userName}, how are you doing today?`);
