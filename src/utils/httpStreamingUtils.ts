@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for HTTP streaming audio communication
  */
@@ -305,6 +304,9 @@ export async function sendHttpAudio(userId: string, sessionId: string, audioBlob
     const url = ENDPOINTS.AUDIO_HTTP_INPUT(userId, sessionId);
     console.log(`Sending audio to ${url}, size: ${audioBlob.size} bytes`);
     
+    // Add debug log for audio content type
+    console.log(`Audio content type: ${audioBlob.type || 'audio/webm'}`);
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -324,6 +326,7 @@ export async function sendHttpAudio(userId: string, sessionId: string, audioBlob
       }
     }
     
+    console.log("Audio chunk sent successfully");
     return true;
   } catch (error) {
     console.error('Error sending audio:', error);
@@ -373,6 +376,7 @@ export class HttpAudioRecorder {
   private stream: MediaStream | null = null;
   private isRecording: boolean = false;
   private chunkInterval: number;
+  private chunkCount: number = 0;
   
   constructor(userId: string, sessionId: string, chunkInterval: number = 200) {
     this.userId = userId;
@@ -414,10 +418,32 @@ export class HttpAudioRecorder {
       
       this.mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0) {
-          console.log(`Recording data available: ${event.data.size} bytes`);
+          this.chunkCount++;
+          console.log(`Recording data available: chunk #${this.chunkCount}, ${event.data.size} bytes`);
           // Send chunk to server
-          await sendHttpAudio(this.userId, this.sessionId, event.data);
+          const success = await sendHttpAudio(this.userId, this.sessionId, event.data);
+          if (success) {
+            console.log(`Audio chunk #${this.chunkCount} sent successfully`);
+          } else {
+            console.error(`Failed to send audio chunk #${this.chunkCount}`);
+          }
+        } else {
+          console.log("Empty audio chunk received - no data to send");
         }
+      };
+      
+      // Add event handlers for debugging
+      this.mediaRecorder.onstart = () => {
+        console.log("MediaRecorder started");
+        this.chunkCount = 0;
+      };
+      
+      this.mediaRecorder.onstop = () => {
+        console.log(`MediaRecorder stopped after recording ${this.chunkCount} chunks`);
+      };
+      
+      this.mediaRecorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
       };
       
       // Record in small chunks for responsive conversation
@@ -440,11 +466,16 @@ export class HttpAudioRecorder {
     if (!this.isRecording) return;
     
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      console.log("Stopping MediaRecorder");
       this.mediaRecorder.stop();
     }
     
     if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
+      console.log("Stopping audio tracks");
+      this.stream.getTracks().forEach(track => {
+        console.log(`Stopping track: ${track.kind}, ${track.label}`);
+        track.stop();
+      });
       this.stream = null;
     }
     
@@ -456,3 +487,4 @@ export class HttpAudioRecorder {
     return this.isRecording;
   }
 }
+

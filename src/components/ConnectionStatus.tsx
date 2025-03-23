@@ -2,13 +2,14 @@
 import React from "react";
 import { useSession } from "@/context/SessionContext";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Globe, WifiOff } from "lucide-react";
+import { Loader2, Globe, WifiOff, CheckCircle2 } from "lucide-react";
 
 const ConnectionStatus: React.FC = () => {
   const { 
     isSessionActive, 
     isConnecting,
-    streamController
+    streamController,
+    useHttpStreaming
   } = useSession();
   
   // Use a more detailed debug log to track rendering and props
@@ -16,6 +17,7 @@ const ConnectionStatus: React.FC = () => {
     isSessionActive, 
     isConnecting, 
     hasStreamController: !!streamController,
+    useHttpStreaming,
     renderTime: new Date().toISOString()
   });
   
@@ -29,12 +31,12 @@ const ConnectionStatus: React.FC = () => {
     );
   }
   
-  // Handle connected state - this requires both isSessionActive AND streamController
-  if (isSessionActive && streamController) {
+  // Handle connected state - this requires both isSessionActive AND streamController if using HTTP
+  if (isSessionActive && (useHttpStreaming ? streamController : true)) {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-600 px-3 py-1">
-        <Globe className="h-3 w-3 mr-1" />
-        <span>Connected (HTTP)</span>
+        <CheckCircle2 className="h-3 w-3 mr-1" />
+        <span>Connected {useHttpStreaming ? "(HTTP)" : "(WebSocket)"}</span>
       </Badge>
     );
   }

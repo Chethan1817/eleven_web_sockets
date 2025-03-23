@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import ConnectionStatus from "./ConnectionStatus";
 
 const AudioRecorder: React.FC = () => {
   const { 
@@ -92,7 +93,11 @@ const AudioRecorder: React.FC = () => {
       stopRecording();
     } else {
       console.log("Starting recording");
-      startRecording();
+      startRecording().then(() => {
+        console.log("Recording started successfully - speak now to see audio processing");
+      }).catch(error => {
+        console.error("Failed to start recording:", error);
+      });
     }
   };
   
@@ -128,7 +133,7 @@ const AudioRecorder: React.FC = () => {
         </div>
       )}
       
-      <div className="w-full flex justify-center mb-4">
+      <div className="w-full flex justify-between mb-4">
         <div className="flex items-center space-x-2">
           <Wifi className="h-4 w-4 text-muted-foreground" />
           <Switch 
@@ -142,6 +147,8 @@ const AudioRecorder: React.FC = () => {
             HTTP Streaming
           </Label>
         </div>
+        
+        <ConnectionStatus />
       </div>
       
       <div 
