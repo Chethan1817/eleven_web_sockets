@@ -51,6 +51,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [responses, setResponses] = useState<Response[]>([]);
   
   const websocketRef = useRef<WebSocket | null>(null);
+  const websocketReadyRef = useRef<boolean>(false);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -111,6 +112,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     console.log(`Creating WebSocket connection to: ${wsUrl}`);
     
     const ws = new WebSocket(wsUrl);
+    websocketReadyRef.current = false;
     
     const connectionTimeoutId = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
@@ -128,6 +130,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     ws.onopen = () => {
       console.log("✅ WebSocket connection opened successfully", { readyState: ws.readyState });
       clearTimeout(connectionTimeoutId);
+      
+      // Mark WebSocket as ready
+      websocketReadyRef.current = true;
       
       // Signal to the UI that connection is established
       setIsConnecting(false);
@@ -186,9 +191,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       clearTimeout(connectionTimeoutId);
       
+      // Ensure ping interval is cleared in onclose as well
       if ((ws as any).pingInterval) {
         clearInterval((ws as any).pingInterval);
+        (ws as any).pingInterval = null;
       }
+      
+      websocketReadyRef.current = false;
       
       if (event.code === 1006) {
         console.log("Abnormal closure. This might be due to network issues or server problems.");
@@ -227,14 +236,34 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsProcessing(false);
     
     if (websocketRef.current) {
-      if ((websocketRef.current as any).pingInterval) {
-        clearInterval((websocketRef.current as any).pingInterval);
+      const ws = websocketRef.current;
+      
+      // Only close if ready or we're in an appropriate state
+      if ((ws as any).pingInterval) {
+        clearInterval((ws as any).pingInterval);
+        (ws as any).pingInterval = null;
       }
       
-      if (websocketRef.current.readyState === WebSocket.OPEN || 
-          websocketRef.current.readyState === WebSocket.CONNECTING) {
-        websocketRef.current.close();
+      // Handle WebSocket closure with appropriate state checks
+      if (websocketReadyRef.current && 
+          (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        // WebSocket is ready and in a state where we can close it
+        ws.close();
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        // WebSocket is still connecting but not ready
+        console.log("WebSocket is still connecting, delaying close");
+        
+        // Add a small delay before closing if in CONNECTING state
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.CONNECTING) {
+            console.log("Closing WebSocket after delay (was in CONNECTING state)");
+            ws.close();
+          }
+        }, 300);
+      } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        console.log(`WebSocket is already in ${ws.readyState === WebSocket.CLOSED ? 'CLOSED' : 'CLOSING'} state`);
       }
+      
       websocketRef.current = null;
     }
     
@@ -468,8 +497,16 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   useEffect(() => {
     return () => {
+      // Guard cleanup on unmount
       if (!isManuallyStoppingRef.current) {
         console.log("Component unmounting, stopping session");
+        
+        // Check if WebSocket is in CONNECTING state
+        if (websocketRef.current?.readyState === WebSocket.CONNECTING) {
+          console.warn("Unmounting while WebSocket is still connecting");
+        }
+        
+        // Safely stop the session with minimal impact
         stopSession();
       }
     };
