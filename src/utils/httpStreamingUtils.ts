@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for HTTP streaming audio communication
  */
@@ -71,62 +70,66 @@ export function startHttpStreaming(
   // Inform that we're attempting to connect
   onConnectionStatus("connecting", "Establishing HTTP stream connection");
   
-  fetch(streamUrl, { 
-    signal: controller.signal,
-    headers: {
-      "Accept": "text/event-stream,application/octet-stream,application/json",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
-    },
-    // Important: Prevent the browser from caching the response
-    cache: "no-store"
-  })
-  .then(response => {
-    if (!response.ok) {
-      return response.text().then(errorText => {
+  // Initialize connection and stream reading
+  (async () => {
+    try {
+      const response = await fetch(streamUrl, { 
+        signal: controller.signal,
+        headers: {
+          "Accept": "text/event-stream,application/octet-stream,application/json",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive"
+        },
+        // Important: Prevent the browser from caching the response
+        cache: "no-store"
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
         console.error(`HTTP stream error: ${response.status} ${response.statusText}`, errorText);
         onConnectionStatus("error", `Connection error: ${response.status} ${response.statusText}`);
         throw new Error(`Stream error: ${response.status} ${errorText}`);
-      });
-    }
-    
-    if (!response.body) {
-      console.error("ReadableStream not supported in this browser");
-      onConnectionStatus("error", "Your browser doesn't support streaming");
-      throw new Error("ReadableStream not supported");
-    }
-    
-    onConnectionStatus("connected", "HTTP stream connected");
-    console.log("HTTP stream connected successfully");
-    
-    // Get a reader to consume the stream
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    
-    // This function actively consumes the stream to prevent auto-abortion
-    async function readStream() {
-      try {
-        while (true) {
+      }
+      
+      if (!response.body) {
+        console.error("ReadableStream not supported in this browser");
+        onConnectionStatus("error", "Your browser doesn't support streaming");
+        throw new Error("ReadableStream not supported");
+      }
+      
+      onConnectionStatus("connected", "HTTP stream connected");
+      console.log("HTTP stream connected successfully");
+      
+      // Get a reader to consume the stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      console.log("[Stream] Reading from connection...");
+      
+      // Process stream chunks in a loop
+      while (true) {
+        try {
           const { done, value } = await reader.read();
           
           if (done) {
-            console.log("Stream complete");
-            onConnectionStatus("disconnected", "Stream ended");
+            console.log("[Stream] Connection closed by server.");
+            onConnectionStatus("disconnected", "Stream ended by server");
             break;
           }
           
-          // Process the received chunk
+          // Process the chunk
           const chunk = decoder.decode(value, { stream: true });
-          console.log(`Received chunk: ${chunk.length} bytes`);
+          console.log(`[Stream] Received chunk: ${chunk.length} bytes`);
           buffer += chunk;
           
-          // Process complete messages
+          // Process any complete messages in the buffer
           const { processed, remainder } = processBuffer(buffer);
           buffer = remainder;
           
-          // Handle each message
+          // Handle each complete message
           processed.forEach(message => {
+            console.log("[Stream] Incoming message:", message);
             handleStreamMessage(
               message, 
               onTranscript, 
@@ -134,28 +137,26 @@ export function startHttpStreaming(
               onConnectionStatus
             );
           });
-        }
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          console.log("HTTP stream aborted by user");
-          onConnectionStatus("disconnected", "Connection closed by user");
-        } else {
-          console.error("Error reading from stream:", error);
-          onConnectionStatus("error", `Stream error: ${error.message}`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.log("[Stream] HTTP stream aborted by user");
+            onConnectionStatus("disconnected", "Connection closed by user");
+            break;
+          } else {
+            console.error("[Stream] Error reading from stream:", error);
+            onConnectionStatus("error", `Stream error: ${error.message}`);
+            break;
+          }
         }
       }
+    } catch (error) {
+      // Only log non-abort errors
+      if (error.name !== 'AbortError') {
+        console.error("HTTP stream connection error:", error);
+        onConnectionStatus("error", `Connection error: ${error.message}`);
+      }
     }
-    
-    // Start consuming the stream immediately to prevent browser auto-abortion
-    readStream();
-  })
-  .catch(error => {
-    // Only log non-abort errors (abort is expected during cleanup)
-    if (error.name !== 'AbortError') {
-      console.error("HTTP stream connection error:", error);
-      onConnectionStatus("error", `Connection error: ${error.message}`);
-    }
-  });
+  })();
   
   return controller;
 }
@@ -170,6 +171,7 @@ function processBuffer(buffer: string): {
   const processed: StreamMessage[] = [];
   let remainder = buffer;
   
+  // Process each line that ends with a newline
   while (remainder.includes('\n')) {
     const newlinePos = remainder.indexOf('\n');
     const message = remainder.substring(0, newlinePos);
@@ -191,7 +193,7 @@ function processBuffer(buffer: string): {
           processed.push(msgObj);
         }
       } catch (e) {
-        console.error('Error parsing message:', e, message);
+        console.error('[Stream] Error parsing message:', e, message);
       }
     }
     

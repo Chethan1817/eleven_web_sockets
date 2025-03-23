@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
@@ -17,9 +16,8 @@ const Index: React.FC = () => {
   const [showDebug, setShowDebug] = React.useState(false);
   const initialLoadRef = useRef(true);
   
-  // Clear session data when page loads, but only once
+  // Clear session data when page loads, but only once and only on first mount
   useEffect(() => {
-    // Only clear the session once when the component mounts
     if (initialLoadRef.current) {
       console.log("Initial page load - clearing session");
       clearSession();
