@@ -3,14 +3,14 @@ import React, { useState, useRef, useEffect } from "react";
 import { useSession } from "@/context/SessionContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Volume2, VolumeX, PlayCircle, Code, Info } from "lucide-react";
+import { Volume2, VolumeX, PlayCircle, Code, Info, PlaySquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { detectBrowserAudioSupport, playAudio } from "@/utils/audioUtils";
 
 const ResponsePlayer: React.FC = () => {
-  const { responses, isSessionActive } = useSession();
+  const { responses, isSessionActive, stopSession } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
   
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null);
@@ -52,7 +52,7 @@ const ResponsePlayer: React.FC = () => {
       // Play audio as PCM
       console.log(`Playing response ${response.id} as PCM audio`);
       const success = await playAudio(audioBlob, response.id, {
-        sampleRate: 16000,  // Adjust based on your actual PCM format
+        sampleRate: 16000,  // PCM format sample rate
         channels: 1
       });
       
@@ -64,7 +64,7 @@ const ResponsePlayer: React.FC = () => {
           setCurrentPlayingId(null);
         }, (audioBlob.size / 32) + 1000); // Rough estimate: 16-bit PCM at 16kHz is 32 bytes per ms
       } else {
-        setAudioPlaybackError("Failed to play audio. The format may not be supported.");
+        setAudioPlaybackError("Failed to play PCM audio. Please try refreshing the browser.");
       }
     } catch (err) {
       console.error("Exception during audio playback setup:", err);
@@ -128,7 +128,7 @@ const ResponsePlayer: React.FC = () => {
               <Info className="h-4 w-4" />
               <AlertTitle>Audio Playback Issue</AlertTitle>
               <AlertDescription>
-                {audioPlaybackError}. The application is configured to play PCM audio only.
+                {audioPlaybackError}
               </AlertDescription>
             </Alert>
           )}
@@ -138,7 +138,8 @@ const ResponsePlayer: React.FC = () => {
             <Info className="h-4 w-4" />
             <AlertTitle>Audio Information</AlertTitle>
             <AlertDescription className="text-xs">
-              Using Web Audio API for PCM playback. Sample rate: 16kHz, 16-bit.
+              Using Web Audio API for PCM playback. Sample rate: 16kHz, 16-bit, mono channel.
+              {audioFormats.wav ? " Browser supports WAV." : " Browser doesn't support WAV."}
             </AlertDescription>
           </Alert>
           
@@ -172,8 +173,9 @@ const ResponsePlayer: React.FC = () => {
                       currentPlayingId === response.id && "text-primary"
                     )}
                     onClick={() => playResponseAudio(response)}
+                    title="Play audio response"
                   >
-                    <PlayCircle size={18} />
+                    <PlaySquare size={18} />
                   </Button>
                 )}
               </div>

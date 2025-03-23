@@ -17,37 +17,38 @@ export async function playPCMAudio(
 ): Promise<{ start: () => void, stop: () => void }> {
   // Convert blob to ArrayBuffer
   const arrayBuffer = await pcmBlob.arrayBuffer();
-  const pcmData = new Uint8Array(arrayBuffer);
   
   // Create audio context
   const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-  const audioContext = new AudioContext();
+  const audioContext = new AudioContext({
+    sampleRate: sampleRate // Ensure the audio context uses the correct sample rate
+  });
   
-  // Determine if data is 16-bit or 32-bit PCM
-  const bytesPerSample = pcmData.length / (sampleRate * channels * (audioContext.destination.channelCount / 8));
-  const isPCM16 = bytesPerSample <= 2;
+  // Get the byte length to determine format (16-bit vs 32-bit)
+  const dataLength = arrayBuffer.byteLength;
+  const samplesCount = dataLength / (channels * 2); // Assuming 16-bit (2 bytes per sample)
   
   // Create the audio buffer
   const audioBuffer = audioContext.createBuffer(
     channels,
-    pcmData.length / (isPCM16 ? 2 : 4) / channels,
+    samplesCount,
     sampleRate
   );
   
-  // Fill the buffer with PCM data
+  // Fill the buffer with PCM data - handle 16-bit PCM (most common format)
+  const dataView = new DataView(arrayBuffer);
+  
+  // Process each channel
   for (let channel = 0; channel < channels; channel++) {
     const channelData = audioBuffer.getChannelData(channel);
-    const dataView = new DataView(arrayBuffer);
     
-    for (let i = 0; i < channelData.length; i++) {
-      const byteOffset = (i * channels + channel) * (isPCM16 ? 2 : 4);
+    for (let i = 0; i < samplesCount; i++) {
+      const byteOffset = (i * channels + channel) * 2; // 2 bytes per sample for 16-bit PCM
       
-      if (isPCM16) {
-        // 16-bit PCM (convert to float in the range [-1, 1])
+      // Convert 16-bit PCM to float in the range [-1, 1]
+      // Use little-endian (true) as most common encoding for PCM
+      if (byteOffset < dataLength - 1) { // Ensure we're not reading past the buffer
         channelData[i] = dataView.getInt16(byteOffset, true) / 32768.0;
-      } else {
-        // 32-bit PCM (convert to float in the range [-1, 1])
-        channelData[i] = dataView.getInt32(byteOffset, true) / 2147483648.0;
       }
     }
   }
@@ -57,7 +58,7 @@ export async function playPCMAudio(
   bufferSource.buffer = audioBuffer;
   bufferSource.connect(audioContext.destination);
   
-  console.log(`PCM audio prepared: ${sampleRate}Hz, ${channels} channels, ${isPCM16 ? '16-bit' : '32-bit'}`);
+  console.log(`PCM audio prepared: ${sampleRate}Hz, ${channels} channels, 16-bit`);
   
   // Return control functions
   return {
