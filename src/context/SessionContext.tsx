@@ -1,14 +1,8 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS } from "@/config";
-import { playAudio, isMP3Format } from "@/utils/audioUtils";
-import { 
-  createHttpSession, 
-  startHttpStreaming, 
-  closeHttpSession, 
-  HttpAudioRecorder 
-} from "@/utils/httpStreamingUtils";
 
 interface Transcript {
   id: string;
@@ -23,7 +17,7 @@ interface Response {
   audio_url?: string;
   type: "quick" | "main";
   timestamp: number;
-  raw_data?: any; // Adding raw data for debugging
+  raw_data?: any;
 }
 
 interface SessionContextType {
@@ -35,16 +29,11 @@ interface SessionContextType {
   responses: Response[];
   sessionId: string | null;
   websocket: WebSocket | null;
-  streamController: AbortController | null;
-  greeting: string | null;
   startSession: () => Promise<void>;
   stopSession: () => Promise<void>;
   startRecording: () => void;
   stopRecording: () => void;
   clearSession: () => void;
-  interruptResponse: () => void;
-  useHttpStreaming: boolean;
-  setUseHttpStreaming: (useHttp: boolean) => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -60,70 +49,15 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
-  const [greeting, setGreeting] = useState<string | null>(null);
-  const [useHttpStreaming, setUseHttpStreaming] = useState<boolean>(true);
   
   const websocketRef = useRef<WebSocket | null>(null);
-  const streamControllerRef = useRef<AbortController | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const httpRecorderRef = useRef<HttpAudioRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const audioQueueRef = useRef<{blob: Blob, id: string, format: "mp3" | "pcm" | "auto"}[]>([]);
-  const isPlayingRef = useRef<boolean>(false);
   const sessionActiveRef = useRef<boolean>(false);
   const isManuallyStoppingRef = useRef<boolean>(false);
-  const skipUnmountCleanupRef = useRef<boolean>(false);
   
-  const clearAudioQueue = useCallback(() => {
-    isPlayingRef.current = false;
-    audioQueueRef.current = [];
-  }, []);
-  
-  const playNextInQueue = useCallback(async () => {
-    if (audioQueueRef.current.length > 0 && !isPlayingRef.current) {
-      const next = audioQueueRef.current.shift();
-      if (next) {
-        console.log(`Playing next audio in queue: ${next.id} (format: ${next.format})`);
-        isPlayingRef.current = true;
-        
-        try {
-          const success = await playAudio(next.blob, next.id, {
-            sampleRate: 16000,
-            channels: 1,
-            format: next.format
-          });
-          
-          if (success) {
-            let durationMs: number;
-            
-            if (next.format === "mp3") {
-              durationMs = 10000; // 10 seconds max
-            } else {
-              durationMs = (next.blob.size / 32) + 500; // Add buffer
-            }
-            
-            setTimeout(() => {
-              isPlayingRef.current = false;
-              playNextInQueue();
-            }, durationMs);
-          } else {
-            console.error(`Failed to play audio ${next.id}`);
-            isPlayingRef.current = false;
-            setTimeout(playNextInQueue, 100);
-          }
-        } catch (err) {
-          console.error("Exception in audio playback:", err);
-          isPlayingRef.current = false;
-          setTimeout(playNextInQueue, 100);
-        }
-      }
-    }
-  }, []);
-  
-  const handleWebSocketMessage = useCallback(async (event: MessageEvent) => {
+  const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     if (typeof event.data === 'string') {
       console.log("📥 RECEIVED FROM SERVER (text data):", event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
       
@@ -164,28 +98,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log("Raw message content:", event.data);
       }
     } else if (event.data instanceof Blob) {
-      const audioSize = event.data.size;
+      console.log(`📥 RECEIVED FROM SERVER (binary): ${event.data.size} bytes of audio`);
       
-      console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of audio`);
-      
-      const isMp3 = await isMP3Format(event.data);
-      const audioFormat = isMp3 ? "mp3" : "pcm";
-      const audioMimeType = isMp3 ? "audio/mpeg" : "audio/pcm";
-      
-      console.log(`Audio format detected: ${audioFormat.toUpperCase()}`);
-      
-      const audioBlob = new Blob([event.data], { type: audioMimeType });
-      const audioId = `audio-${Date.now()}`;
-      
-      audioQueueRef.current.push({
-        blob: audioBlob,
-        id: audioId,
-        format: audioFormat
-      });
-      
-      playNextInQueue();
+      // Create and play audio
+      const audio = new Audio(URL.createObjectURL(event.data));
+      audio.play();
     }
-  }, [playNextInQueue]);
+  }, []);
   
   const createWebSocketConnection = useCallback((userId: string, sessionId: string) => {
     const wsUrl = ENDPOINTS.AUDIO_WEBSOCKET(userId, sessionId);
@@ -231,33 +150,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     ws.onerror = (error) => {
       console.error("WebSocket connection error:", error);
-      console.log("Error details:", {
-        type: error.type,
-        target: error.target,
-        eventPhase: error.eventPhase,
-        bubbles: error.bubbles,
-        cancelable: error.cancelable,
-        composed: error.composed,
-        timeStamp: error.timeStamp,
-        defaultPrevented: error.defaultPrevented,
-        isTrusted: error.isTrusted,
-        currentTarget: error.currentTarget
-      });
       
       toast({
         title: "Connection Error",
-        description: "Failed to establish WebSocket connection. Trying alternative method...",
+        description: "Failed to establish WebSocket connection.",
         variant: "destructive"
       });
-      
-      if (!useHttpStreaming) {
-        setUseHttpStreaming(true);
-        toast({
-          title: "Switching to HTTP Streaming",
-          description: "Using more compatible streaming method",
-          variant: "default"
-        });
-      }
     };
     
     ws.onclose = (event) => {
@@ -291,7 +189,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     
     return ws;
-  }, [handleWebSocketMessage, toast, isSessionActive, useHttpStreaming, setUseHttpStreaming]);
+  }, [handleWebSocketMessage, toast, isSessionActive]);
   
   const stopSession = useCallback(async (): Promise<void> => {
     if (!sessionActiveRef.current && !isSessionActive) {
@@ -299,7 +197,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
-    console.log("Stopping session...", new Error().stack);
+    console.log("Stopping session...");
     
     isManuallyStoppingRef.current = true;
     
@@ -307,19 +205,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsSessionActive(false);
     setIsRecording(false);
     setIsProcessing(false);
-    
-    clearAudioQueue();
-    
-    if (httpRecorderRef.current) {
-      httpRecorderRef.current.stop();
-      httpRecorderRef.current = null;
-    }
-    
-    if (streamControllerRef.current) {
-      console.log("Aborting HTTP stream controller");
-      streamControllerRef.current.abort();
-      streamControllerRef.current = null;
-    }
     
     if (websocketRef.current) {
       if ((websocketRef.current as any).pingInterval) {
@@ -342,29 +227,21 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       audioStreamRef.current = null;
     }
     
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      await audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    audioSourceRef.current = null;
-    
     if (sessionId && user) {
       try {
         const userIdString = String(user.id);
         
-        if (useHttpStreaming) {
-          await closeHttpSession(userIdString, sessionId);
-        } else {
-          await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
-            },
-            body: JSON.stringify({ user_id: userIdString })
-          });
-        }
+        await fetch(ENDPOINTS.CLOSE_AUDIO_SESSION, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
+          },
+          body: JSON.stringify({ 
+            user_id: userIdString,
+            session_id: sessionId
+          })
+        });
       } catch (error) {
         console.error("Error ending session on server:", error);
       }
@@ -375,7 +252,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setTimeout(() => {
       isManuallyStoppingRef.current = false;
     }, 100);
-  }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming, isSessionActive]);
+  }, [sessionId, user, accessToken, isSessionActive]);
   
   const startSession = useCallback(async (): Promise<void> => {
     if (!user) {
@@ -398,108 +275,41 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     isManuallyStoppingRef.current = false;
     
-    skipUnmountCleanupRef.current = true;
-    
     setIsConnecting(true);
     sessionActiveRef.current = true;
     
     try {
       console.log("Starting new session...");
-      let newSessionId;
       const userIdString = String(user.id);
       
-      if (useHttpStreaming) {
-        newSessionId = await createHttpSession(userIdString, user.name);
-        console.log(`Got new session ID: ${newSessionId}`);
-        setSessionId(newSessionId);
-        
-        const controller = startHttpStreaming(
-          userIdString,
-          newSessionId,
-          (text: string, isFinal: boolean) => {
-            console.log(`Received transcript: "${text}", isFinal: ${isFinal}`);
-            setTranscripts(prev => [...prev, {
-              id: `trans-${Date.now()}`,
-              text: text || "",
-              is_final: isFinal || false,
-              timestamp: Date.now()
-            }]);
-          },
-          (text: string, audioData?: ArrayBuffer) => {
-            console.log(`Received response: "${text.substring(0, 50)}..."`);
-            setResponses(prev => [...prev, {
-              id: `resp-${Date.now()}`,
-              text: text || "",
-              type: "main",
-              timestamp: Date.now()
-            }]);
-          },
-          (status: string, message?: string) => {
-            console.log(`Connection status update: ${status} - ${message || ""}`);
-            
-            if (status === "connected") {
-              console.log("Session connected successfully");
-              setIsConnecting(false);
-              setIsSessionActive(true);
-              sessionActiveRef.current = true;
-              
-              skipUnmountCleanupRef.current = false;
-              
-              toast({
-                title: "Connection Established",
-                description: "HTTP streaming connection is active.",
-                variant: "default"
-              });
-              
-              setIsSessionActive(true);
-            } else if (status === "disconnected" || status === "error") {
-              console.log(`Session ${status}: ${message}`);
-              if (sessionActiveRef.current && !isManuallyStoppingRef.current) {
-                setIsConnecting(false);
-                setIsSessionActive(false);
-                sessionActiveRef.current = false;
-                
-                toast({
-                  title: `Connection ${status === "error" ? "Error" : "Closed"}`,
-                  description: message || `The streaming connection was ${status}.`,
-                  variant: status === "error" ? "destructive" : "default"
-                });
-              }
-            }
-          }
-        );
-        
-        streamControllerRef.current = controller;
-        
-        setIsSessionActive(true);
-        
-        console.log("HTTP streaming setup complete, context state:", {
-          sessionId: newSessionId,
-          isConnecting: true,
-          isSessionActive: true,
-          hasStreamController: !!controller
-        });
-      } else {
-        const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
-          },
-          body: JSON.stringify({ user_id: userIdString })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        newSessionId = data.session_id;
-        setSessionId(newSessionId);
-        
-        const ws = createWebSocketConnection(userIdString, newSessionId);
-        websocketRef.current = ws;
+      const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify({ user_id: userIdString })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
       }
+      
+      const data = await response.json();
+      const newSessionId = data.session_id;
+      setSessionId(newSessionId);
+      
+      const ws = createWebSocketConnection(userIdString, newSessionId);
+      websocketRef.current = ws;
+      
+      setIsSessionActive(true);
+      setIsConnecting(false);
+      
+      toast({
+        title: "Session Started",
+        description: "WebSocket connection established successfully.",
+        variant: "default"
+      });
     } catch (error) {
       console.error("Failed to start session:", error);
       setIsConnecting(false);
@@ -512,7 +322,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive"
       });
     }
-  }, [user, accessToken, stopSession, toast, createWebSocketConnection, useHttpStreaming, isSessionActive]);
+  }, [user, accessToken, stopSession, toast, createWebSocketConnection, isSessionActive]);
   
   const startRecording = useCallback(async () => {
     if (!isSessionActive) {
@@ -528,59 +338,37 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       setIsRecording(true);
       
-      if (useHttpStreaming) {
-        if (!httpRecorderRef.current && user && sessionId) {
-          const userIdString = String(user.id);
-          httpRecorderRef.current = new HttpAudioRecorder(userIdString, sessionId);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm;codecs=opus",
+      });
+      
+      audioChunksRef.current = [];
+      
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+          console.log(`Sending audio chunk (${event.data.size} bytes) to WebSocket`);
+          websocketRef.current.send(event.data);
         }
-        
-        if (httpRecorderRef.current) {
-          await httpRecorderRef.current.start();
-          console.log("HTTP streaming recorder started");
-        }
-      } else {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioStreamRef.current = stream;
-        
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        audioContextRef.current = audioContext;
-        
-        const source = audioContext.createMediaStreamSource(stream);
-        audioSourceRef.current = source;
-        
-        const recorder = new MediaRecorder(stream, {
-          mimeType: "audio/webm;codecs=opus",
-        });
-        
-        audioChunksRef.current = [];
-        
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-        
-        recorder.onstop = async () => {
-          setIsRecording(false);
-          setIsProcessing(true);
-          
-          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-          
-          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-            console.log(`Sending recorded audio (${audioBlob.size} bytes) to WebSocket`);
-            websocketRef.current.send(audioBlob);
-          } else {
-            console.error("WebSocket not open, cannot send audio");
-            setIsProcessing(false);
-          }
-          
-          audioChunksRef.current = [];
-        };
-        
-        mediaRecorderRef.current = recorder;
-        
-        recorder.start();
-      }
+      };
+      
+      recorder.onstop = () => {
+        setIsRecording(false);
+        setIsProcessing(false);
+      };
+      
+      mediaRecorderRef.current = recorder;
+      
+      recorder.start(100); // Send data in 100ms chunks
+      console.log("Recording started successfully - speak now");
+      
+      toast({
+        title: "Recording Started",
+        description: "Speak now. Your audio is being sent to the server.",
+        variant: "default"
+      });
     } catch (error) {
       console.error("Error starting recording:", error);
       setIsRecording(false);
@@ -591,81 +379,53 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive"
       });
     }
-  }, [isSessionActive, isRecording, sessionId, user, toast, useHttpStreaming]);
+  }, [isSessionActive, isRecording, toast]);
   
   const stopRecording = useCallback(() => {
     setIsProcessing(true);
     
-    if (useHttpStreaming) {
-      if (httpRecorderRef.current) {
-        httpRecorderRef.current.stop();
-        console.log("HTTP streaming recorder stopped");
-      }
-    } else {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.stop();
-      }
-      
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach(track => track.stop());
-      }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
     }
     
     setIsRecording(false);
-  }, [useHttpStreaming]);
+    
+    toast({
+      title: "Recording Stopped",
+      description: "Audio recording has been stopped.",
+      variant: "default"
+    });
+  }, [toast]);
   
   const clearSession = useCallback(() => {
     stopSession();
     setTranscripts([]);
     setResponses([]);
-    setGreeting(null);
   }, [stopSession]);
-  
-  const interruptResponse = useCallback(() => {
-    setIsProcessing(false);
-    clearAudioQueue();
-    
-    if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-      websocketRef.current.send(JSON.stringify({ type: "interrupt" }));
-    }
-  }, [clearAudioQueue]);
-  
-  const initialMountRef = useRef(true);
   
   useEffect(() => {
     const initialSync = () => {
       sessionActiveRef.current = isSessionActive;
-      console.log("Initial session state sync:", { isSessionActive, sessionActiveRef: sessionActiveRef.current });
     };
     
     initialSync();
-    
-    return () => {
-      initialMountRef.current = false;
-    };
   }, []);
   
   useEffect(() => {
     return () => {
-      const shouldSkip = skipUnmountCleanupRef.current || isManuallyStoppingRef.current;
-      console.log(`Component unmounting, cleanup conditions:`, { 
-        skipUnmountCleanup: skipUnmountCleanupRef.current,
-        isManuallyStoppingRef: isManuallyStoppingRef.current,
-        willSkipCleanup: shouldSkip
-      });
-      
-      if (!shouldSkip) {
+      if (!isManuallyStoppingRef.current) {
         console.log("Component unmounting, stopping session");
         stopSession();
-      } else {
-        console.log("Component unmounting, but skipping cleanup due to flags");
       }
     };
   }, [stopSession]);
   
   useEffect(() => {
     if (sessionActiveRef.current !== isSessionActive && !isManuallyStoppingRef.current) {
-      console.log(`Updating sessionActiveRef from ${sessionActiveRef.current} to ${isSessionActive}`);
       sessionActiveRef.current = isSessionActive;
     }
   }, [isSessionActive]);
@@ -679,26 +439,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     responses,
     sessionId,
     websocket: websocketRef.current,
-    streamController: streamControllerRef.current,
-    greeting,
     startSession,
     stopSession,
     startRecording,
     stopRecording,
     clearSession,
-    interruptResponse,
-    useHttpStreaming,
-    setUseHttpStreaming,
   };
-  
-  console.log("SessionContext provider rendering with:", {
-    isSessionActive,
-    isConnecting,
-    hasStreamController: !!streamControllerRef.current,
-    sessionId,
-    manuallyStoppingRef: isManuallyStoppingRef.current,
-    skipUnmountCleanup: skipUnmountCleanupRef.current
-  });
   
   return (
     <SessionContext.Provider value={contextValue}>

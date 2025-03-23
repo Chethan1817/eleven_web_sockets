@@ -2,10 +2,9 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
-import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2, Globe, Wifi, AlertTriangle, Video } from "lucide-react";
+import { Mic, MicOff, Video, Square, XCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import ConnectionStatus from "./ConnectionStatus";
 
@@ -14,19 +13,14 @@ const AudioRecorder: React.FC = () => {
     isSessionActive, 
     isRecording,
     isConnecting,
-    greeting,
     startSession, 
     stopSession, 
     startRecording, 
     stopRecording,
-    interruptResponse,
-    useHttpStreaming,
-    setUseHttpStreaming
   } = useSession();
   
   const { toast } = useToast();
   const [audioLevel, setAudioLevel] = useState<number[]>(Array(10).fill(5));
-  const [showGreeting, setShowGreeting] = useState(false);
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
   const [isAudioDetected, setIsAudioDetected] = useState(false);
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
@@ -88,17 +82,6 @@ const AudioRecorder: React.FC = () => {
   }, [isSessionActive, micPermission, toast]);
   
   useEffect(() => {
-    if (isSessionActive && greeting) {
-      setShowGreeting(true);
-      const timer = setTimeout(() => {
-        setShowGreeting(false);
-      }, 5000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isSessionActive, greeting]);
-  
-  useEffect(() => {
     if (checkingMic) {
       setDisabledReason("Checking microphone access...");
     } else if (micPermission === false) {
@@ -113,17 +96,6 @@ const AudioRecorder: React.FC = () => {
     } else {
       setDisabledReason(null); // Button is enabled for recording
     }
-    
-    console.log("Button state updated:", {
-      isSessionActive,
-      isConnecting,
-      micPermission,
-      checkingMic,
-      disabledReason,
-      connectionAttemptTime,
-      timeElapsed: connectionAttemptTime ? Math.floor((Date.now() - connectionAttemptTime) / 1000) : 0,
-      isDisabled: micPermission === false || isConnecting || checkingMic
-    });
   }, [isSessionActive, isConnecting, micPermission, checkingMic, connectionAttemptTime]);
   
   const handleStartSession = () => {
@@ -143,24 +115,6 @@ const AudioRecorder: React.FC = () => {
     }
   };
   
-  const handleInterruptClick = () => {
-    console.log("Interrupting response");
-    interruptResponse();
-  };
-  
-  const handleHttpToggleChange = (checked: boolean) => {
-    if (!isSessionActive) {
-      setUseHttpStreaming(checked);
-      console.log(`Switched to ${checked ? 'HTTP streaming' : 'WebSocket'} mode`);
-    } else {
-      toast({
-        title: "Cannot Change Mode",
-        description: "Please end the current session before changing connection mode.",
-        variant: "destructive",
-      });
-    }
-  };
-  
   const isSessionButtonDisabled = (): boolean => {
     return isConnecting || isSessionActive;
   };
@@ -171,12 +125,6 @@ const AudioRecorder: React.FC = () => {
   
   return (
     <div className="w-full flex flex-col items-center space-y-6 py-4">
-      {showGreeting && greeting && (
-        <div className="animate-fade-in-out text-primary font-medium text-lg mb-2">
-          {greeting}
-        </div>
-      )}
-      
       {micPermission === false && (
         <div className="bg-destructive/10 text-destructive p-2 rounded-md text-sm animate-pulse">
           Microphone access is denied. Please enable it in your browser settings.
@@ -185,17 +133,7 @@ const AudioRecorder: React.FC = () => {
       
       <div className="w-full flex justify-between mb-4">
         <div className="flex items-center space-x-2">
-          <Wifi className="h-4 w-4 text-muted-foreground" />
-          <Switch 
-            id="connection-mode" 
-            checked={useHttpStreaming}
-            onCheckedChange={handleHttpToggleChange}
-            disabled={isSessionActive}
-          />
-          <Label htmlFor="connection-mode" className="text-sm flex items-center">
-            <Globe className="h-4 w-4 mr-1" />
-            HTTP Streaming
-          </Label>
+          <Label className="text-sm flex items-center">WebSocket Mode</Label>
         </div>
         
         <ConnectionStatus />
@@ -212,12 +150,7 @@ const AudioRecorder: React.FC = () => {
             "text-xs font-medium mb-1 transition-colors duration-200",
             isAudioDetected ? "text-green-500" : "text-muted-foreground"
           )}>
-            {isAudioDetected ? (
-              <span className="flex items-center">
-                <Volume2 className="h-3 w-3 mr-1 animate-pulse" />
-                Audio detected
-              </span>
-            ) : "Listening..."}
+            {isAudioDetected ? "Audio detected" : "Listening..."}
           </div>
         )}
         
@@ -231,9 +164,8 @@ const AudioRecorder: React.FC = () => {
                   isAudioDetected ? "bg-green-500" : "bg-primary/80"
                 )}
                 style={{ 
-                  '--index': index,
                   height: `${level}px` 
-                } as React.CSSProperties}
+                }}
               />
             ))}
           </div>
@@ -281,18 +213,6 @@ const AudioRecorder: React.FC = () => {
             <Mic className="h-6 w-6" />
           )}
         </Button>
-
-        {/* Interrupt Button */}
-        {isSessionActive && (
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-16 w-16 rounded-full shadow-md"
-            onClick={handleInterruptClick}
-          >
-            <XCircle className="h-6 w-6 text-destructive" />
-          </Button>
-        )}
       </div>
       
       {disabledReason && (
@@ -318,8 +238,8 @@ const AudioRecorder: React.FC = () => {
       <div className="text-xs text-muted-foreground">
         {!isSessionActive ? (
           isConnecting ? 
-            `Connecting${connectionAttemptTime ? ` (${Math.floor((Date.now() - connectionAttemptTime) / 1000)}s)` : ''}... (${useHttpStreaming ? 'HTTP' : 'WebSocket'})` 
-            : `Press session button to begin (${useHttpStreaming ? 'HTTP' : 'WebSocket'} mode)`
+            `Connecting${connectionAttemptTime ? ` (${Math.floor((Date.now() - connectionAttemptTime) / 1000)}s)` : ''}...` 
+            : `Press session button to begin`
         ) : (
           isRecording ? (
             isAudioDetected ? "Audio detected and sending..." : "Waiting for audio..."

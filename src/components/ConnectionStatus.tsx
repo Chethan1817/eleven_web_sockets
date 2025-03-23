@@ -10,8 +10,6 @@ const ConnectionStatus: React.FC = () => {
   const { 
     isSessionActive, 
     isConnecting,
-    streamController,
-    useHttpStreaming,
     startSession
   } = useSession();
   
@@ -46,17 +44,6 @@ const ConnectionStatus: React.FC = () => {
     };
   }, [isConnecting, isSessionActive]);
   
-  // Log details for debugging
-  console.log("ConnectionStatus rendering with state:", { 
-    isSessionActive, 
-    isConnecting, 
-    hasStreamController: !!streamController,
-    useHttpStreaming,
-    connectionAttempts,
-    showRetry,
-    renderTime: new Date().toISOString()
-  });
-  
   const handleRetryConnection = () => {
     console.log("Manually retrying connection");
     setShowRetry(false);
@@ -66,7 +53,6 @@ const ConnectionStatus: React.FC = () => {
       description: "Attempting to reconnect to the server...",
     });
     
-    // Retry connection by starting a new session
     startSession();
   };
   
@@ -97,11 +83,11 @@ const ConnectionStatus: React.FC = () => {
   }
   
   // Handle connected state
-  if (isSessionActive && (useHttpStreaming ? streamController : true)) {
+  if (isSessionActive) {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-600 px-3 py-1">
         <CheckCircle2 className="h-3 w-3 mr-1" />
-        <span>Connected {useHttpStreaming ? "(HTTP)" : "(WebSocket)"}</span>
+        <span>Connected (WebSocket)</span>
       </Badge>
     );
   }
