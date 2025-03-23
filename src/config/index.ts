@@ -3,14 +3,14 @@
  * Application configuration settings
  */
 
-// API base URLs - handle both HTTP and HTTPS protocols
+// API base URLs - Use the current origin as default with fallback to localhost
 export const API_BASE_URL = window.location.protocol === 'https:' 
-  ? "https://localhost:8000"  // Use HTTPS in production
-  : "http://localhost:8000";  // Use HTTP in development
+  ? `${window.location.origin}`  // Use current origin in production
+  : "http://localhost:8000";  // Use localhost in development
 
 // Ensure WebSocket protocol matches HTTP protocol (ws for http, wss for https)
 export const WEBSOCKET_BASE_URL = window.location.protocol === 'https:'
-  ? "wss://localhost:8000"    // Use WSS for secure connections
+  ? `wss://${window.location.host}`    // Use WSS for secure connections
   : "ws://localhost:8000";    // Use WS for non-secure connections
 
 // Add debug flag to enable additional logging

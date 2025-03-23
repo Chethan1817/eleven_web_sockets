@@ -1,7 +1,8 @@
+
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
-import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2, Globe, Wifi, AlertTriangle } from "lucide-react";
+import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2, Globe, Wifi, AlertTriangle, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { Switch } from "@/components/ui/switch";
@@ -125,12 +126,14 @@ const AudioRecorder: React.FC = () => {
     });
   }, [isSessionActive, isConnecting, micPermission, checkingMic, connectionAttemptTime]);
   
-  const handleTalkButtonClick = () => {
-    if (!isSessionActive) {
-      console.log("Starting new session");
-      setConnectionAttemptTime(Date.now());
-      startSession();
-    } else if (isRecording) {
+  const handleStartSession = () => {
+    console.log("Starting new session");
+    setConnectionAttemptTime(Date.now());
+    startSession();
+  };
+  
+  const handleRecordingControl = () => {
+    if (isRecording) {
       console.log("Stopping recording");
       stopRecording();
     } else {
@@ -158,8 +161,12 @@ const AudioRecorder: React.FC = () => {
     }
   };
   
-  const isTalkButtonDisabled = (): boolean => {
-    return isConnecting || micPermission === false || checkingMic;
+  const isSessionButtonDisabled = (): boolean => {
+    return isConnecting || isSessionActive;
+  };
+  
+  const isRecordButtonDisabled = (): boolean => {
+    return !isSessionActive || micPermission === false || checkingMic || isConnecting;
   };
   
   return (
@@ -238,39 +245,54 @@ const AudioRecorder: React.FC = () => {
       </div>
       
       <div className="flex items-center justify-center gap-4">
+        {/* Session Creation Button */}
+        <Button
+          variant="secondary"
+          size="icon"
+          className={cn(
+            "h-16 w-16 rounded-full shadow-md transition-all duration-300",
+            isConnecting && "opacity-70 animate-pulse",
+            isSessionButtonDisabled() && "cursor-not-allowed opacity-60"
+          )}
+          onClick={handleStartSession}
+          disabled={isSessionButtonDisabled()}
+          title={isSessionActive ? "Session already active" : disabledReason || "Start new session"}
+        >
+          <Video className="h-6 w-6" />
+        </Button>
+        
+        {/* Record Button */}
+        <Button
+          variant={isRecording ? "destructive" : "default"}
+          size="icon"
+          className={cn(
+            "h-16 w-16 rounded-full shadow-md transition-all duration-300",
+            isRecording && isAudioDetected ? "animate-pulse ring-2 ring-green-500" : 
+            isRecording ? "animate-pulse" : "",
+            isRecordButtonDisabled() && "cursor-not-allowed opacity-60"
+          )}
+          onClick={handleRecordingControl}
+          disabled={isRecordButtonDisabled()}
+          title={!isSessionActive ? "Start session first" : disabledReason || (isRecording ? "Stop recording" : "Start recording")}
+        >
+          {isRecording ? (
+            <MicOff className="h-6 w-6" />
+          ) : (
+            <Mic className="h-6 w-6" />
+          )}
+        </Button>
+
+        {/* Interrupt Button */}
         {isSessionActive && (
           <Button
             variant="outline"
             size="icon"
-            className="h-12 w-12 rounded-full"
+            className="h-16 w-16 rounded-full shadow-md"
             onClick={handleInterruptClick}
           >
             <XCircle className="h-6 w-6 text-destructive" />
           </Button>
         )}
-        
-        <Button
-          variant={isRecording ? "destructive" : "default"}
-          size="icon"
-          className={cn(
-            "h-20 w-20 rounded-full shadow-lg transition-all duration-300",
-            isRecording && isAudioDetected ? "animate-pulse ring-2 ring-green-500" : 
-            isRecording ? "animate-pulse" : "",
-            isConnecting && "opacity-70",
-            isTalkButtonDisabled() && "cursor-not-allowed opacity-60"
-          )}
-          onClick={handleTalkButtonClick}
-          disabled={isTalkButtonDisabled()}
-          title={disabledReason || "Click to talk"}
-        >
-          {!isSessionActive ? (
-            <Play className="h-8 w-8" />
-          ) : isRecording ? (
-            <MicOff className="h-8 w-8" />
-          ) : (
-            <Mic className="h-8 w-8" />
-          )}
-        </Button>
       </div>
       
       {disabledReason && (
@@ -297,11 +319,11 @@ const AudioRecorder: React.FC = () => {
         {!isSessionActive ? (
           isConnecting ? 
             `Connecting${connectionAttemptTime ? ` (${Math.floor((Date.now() - connectionAttemptTime) / 1000)}s)` : ''}... (${useHttpStreaming ? 'HTTP' : 'WebSocket'})` 
-            : `Start a new session to begin (${useHttpStreaming ? 'HTTP' : 'WebSocket'} mode)`
+            : `Press session button to begin (${useHttpStreaming ? 'HTTP' : 'WebSocket'} mode)`
         ) : (
           isRecording ? (
             isAudioDetected ? "Audio detected and sending..." : "Waiting for audio..."
-          ) : "Press the button to talk"
+          ) : "Press the microphone button to talk"
         )}
       </div>
     </div>
