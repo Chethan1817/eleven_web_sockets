@@ -109,6 +109,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     websocketReadyRef.current = false;
     hasOpenedRef.current = false;
     
+    // Don't assign websocketRef.current = ws here - wait until connection is established
+    
     const connectionTimeoutId = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
         console.warn("WebSocket connection timeout after 30 seconds");
@@ -123,8 +125,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }, 30000);
     
     ws.onopen = () => {
-      console.log("✅ WebSocket connection opened successfully", { readyState: ws.readyState });
+      console.log("✅ WebSocket connection OPENED for session", sessionId, { readyState: ws.readyState });
       clearTimeout(connectionTimeoutId);
+      
+      // Only assign the WebSocket ref here, after successful connection
+      websocketRef.current = ws;
       
       websocketReadyRef.current = true;
       hasOpenedRef.current = true;
@@ -215,7 +220,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     
     return ws;
-  }, [handleWebSocketMessage, toast, isSessionActive]);
+  }, [handleWebSocketMessage, toast]);
   
   const stopSession = useCallback(async (): Promise<void> => {
     if (!sessionActiveRef.current && !isSessionActive) {
@@ -339,8 +344,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("🆕 Received session_id:", newSessionId);
       setSessionId(newSessionId);
       
-      const ws = createWebSocketConnection(userIdString, newSessionId);
-      websocketRef.current = ws;
+      // Just create the WebSocket, but don't assign to websocketRef.current yet
+      // That assignment happens in ws.onopen callback
+      createWebSocketConnection(userIdString, newSessionId);
       
       toast({
         title: "Session Started",
