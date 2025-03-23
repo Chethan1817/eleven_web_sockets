@@ -7,6 +7,7 @@ import { Volume2, VolumeX, PlayCircle, Code, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { detectBrowserAudioSupport } from "@/utils/audioUtils";
 
 const ResponsePlayer: React.FC = () => {
   const { responses, isSessionActive } = useSession();
@@ -27,17 +28,9 @@ const ResponsePlayer: React.FC = () => {
   
   // Detect browser supported audio formats
   useEffect(() => {
-    const audio = new Audio();
-    const formats = {
-      mp3: audio.canPlayType('audio/mpeg') !== '',
-      wav: audio.canPlayType('audio/wav') !== '',
-      ogg: audio.canPlayType('audio/ogg') !== '',
-      aac: audio.canPlayType('audio/aac') !== '',
-      webm: audio.canPlayType('audio/webm') !== '',
-    };
-    
-    console.log("Browser supported audio formats:", formats);
-    setAudioFormats(formats);
+    const supportedFormats = detectBrowserAudioSupport();
+    console.log("Browser supported audio formats:", supportedFormats);
+    setAudioFormats(supportedFormats);
   }, []);
   
   // Setup the audio element
@@ -75,7 +68,8 @@ const ResponsePlayer: React.FC = () => {
       console.error("Audio playback error in ResponsePlayer:", {
         error: errorMsg,
         mediaError: error,
-        src: mediaElement.src
+        src: mediaElement.src,
+        currentSrc: mediaElement.currentSrc
       });
       
       setAudioPlaybackError(`${errorMsg}. The audio format may not be supported by your browser.`);
@@ -133,9 +127,9 @@ const ResponsePlayer: React.FC = () => {
         // Play a different response
         console.log(`Starting playback for response ${response.id} with URL:`, response.audio_url);
         
-        // Show the format in the raw data if available
-        const format = response.raw_data?.type || "unknown format";
-        console.log(`Audio format from response: ${format}`);
+        // Get the format from raw data if available
+        const detectedFormat = response.raw_data?.detectedType || response.raw_data?.type || "unknown format";
+        console.log(`Audio format from response: ${detectedFormat}`);
         
         audioRef.current.src = response.audio_url;
         
@@ -146,8 +140,10 @@ const ResponsePlayer: React.FC = () => {
           })
           .catch(error => {
             console.error(`Error playing audio for response ${response.id}:`, error);
-            setAudioPlaybackError(`Playback error: ${error.message}. Format: ${format}`);
+            setAudioPlaybackError(`Playback error: ${error.message}. Format: ${detectedFormat}`);
             setCurrentPlayingId(null);
+            
+            // Could try alternative formats here if needed
           });
       }
     } catch (err) {

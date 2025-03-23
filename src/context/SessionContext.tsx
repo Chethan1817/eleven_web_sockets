@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useRef, useCallback, useEff
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS } from "@/config";
+import { detectAudioFormat, createAudioVariants } from "@/utils/audioUtils";
 
 interface Transcript {
   id: string;
@@ -124,48 +125,71 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const tryPlayAudio = useCallback(async (blob: Blob, id: string): Promise<boolean> => {
     if (!audioPlayerRef.current) return false;
     
-    // Try different audio formats
-    const formatsToTry = [
-      { type: 'audio/mpeg', ext: 'mp3' },
-      { type: 'audio/wav', ext: 'wav' },
-      { type: 'audio/webm', ext: 'webm' },
-      { type: 'audio/aac', ext: 'aac' },
-      { type: 'audio/ogg', ext: 'ogg' },
-    ];
-    
-    // Try the original blob first
     try {
-      const originalUrl = URL.createObjectURL(blob);
-      audioPlayerRef.current.src = originalUrl;
-      await audioPlayerRef.current.play();
-      console.log(`Successfully playing audio ${id} with original format: ${blob.type}`);
-      return true;
-    } catch (err) {
-      console.log(`Failed to play with original format ${blob.type}, trying other formats...`);
-      URL.revokeObjectURL(audioPlayerRef.current.src);
-    }
-    
-    // Try with different MIME types
-    for (const format of formatsToTry) {
-      if (blob.type === format.type) continue; // Skip if same as original
+      // First, try to detect the actual format from the binary data
+      const detectedFormat = await detectAudioFormat(blob);
+      console.log(`Detected format for audio ${id}: ${detectedFormat}`);
       
+      // First try with the detected format
       try {
-        const newBlob = new Blob([blob], { type: format.type });
-        const url = URL.createObjectURL(newBlob);
+        const detectedBlob = new Blob([blob], { type: detectedFormat });
+        const url = URL.createObjectURL(detectedBlob);
         audioPlayerRef.current.src = url;
         
-        console.log(`Attempting to play audio ${id} with format: ${format.type}`);
+        console.log(`Attempting to play audio ${id} with detected format: ${detectedFormat}`);
         await audioPlayerRef.current.play();
-        console.log(`Successfully playing audio ${id} with format: ${format.type}`);
+        console.log(`Successfully playing audio ${id} with detected format: ${detectedFormat}`);
         return true;
       } catch (err) {
-        console.log(`Failed to play audio ${id} with format: ${format.type}:`, err);
+        console.log(`Failed to play with detected format ${detectedFormat}, trying other formats...`);
         URL.revokeObjectURL(audioPlayerRef.current.src);
       }
+      
+      // If detected format fails, try with the original blob
+      try {
+        const originalUrl = URL.createObjectURL(blob);
+        audioPlayerRef.current.src = originalUrl;
+        await audioPlayerRef.current.play();
+        console.log(`Successfully playing audio ${id} with original format: ${blob.type}`);
+        return true;
+      } catch (err) {
+        console.log(`Failed to play with original format ${blob.type}, trying other formats...`);
+        URL.revokeObjectURL(audioPlayerRef.current.src);
+      }
+      
+      // Try with different MIME types
+      const formatsToTry = [
+        { type: 'audio/mpeg', ext: 'mp3' },
+        { type: 'audio/wav', ext: 'wav' },
+        { type: 'audio/webm', ext: 'webm' },
+        { type: 'audio/aac', ext: 'aac' },
+        { type: 'audio/ogg', ext: 'ogg' },
+      ];
+      
+      for (const format of formatsToTry) {
+        if (blob.type === format.type || detectedFormat === format.type) continue; // Skip if same as already tried
+        
+        try {
+          const newBlob = new Blob([blob], { type: format.type });
+          const url = URL.createObjectURL(newBlob);
+          audioPlayerRef.current.src = url;
+          
+          console.log(`Attempting to play audio ${id} with format: ${format.type}`);
+          await audioPlayerRef.current.play();
+          console.log(`Successfully playing audio ${id} with format: ${format.type}`);
+          return true;
+        } catch (err) {
+          console.log(`Failed to play audio ${id} with format: ${format.type}:`, err);
+          URL.revokeObjectURL(audioPlayerRef.current.src);
+        }
+      }
+      
+      console.error(`All playback attempts failed for audio ${id}`);
+      return false;
+    } catch (err) {
+      console.error(`Exception in tryPlayAudio for ${id}:`, err);
+      return false;
     }
-    
-    console.error(`All playback attempts failed for audio ${id}`);
-    return false;
   }, []);
   
   const playNextInQueue = useCallback(() => {
@@ -200,7 +224,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [tryPlayAudio]);
   
-  const handleWebSocketMessage = useCallback((event: MessageEvent) => {
+  const handleWebSocketMessage = useCallback(async (event: MessageEvent) => {
     try {
       if (typeof event.data === 'string') {
         const data = JSON.parse(event.data);
@@ -234,19 +258,27 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const originalContentType = event.data.type || 'audio/mpeg';
         console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes, type: ${originalContentType}`);
         
-        // Store the original blob
-        const originalBlob = new Blob([event.data], { type: originalContentType });
+        // Detect the actual audio format from the binary data
+        const detectedFormat = await detectAudioFormat(event.data);
+        console.log(`Detected audio format from binary data: ${detectedFormat}`);
+        
+        // Store the original blob with detected format
+        const originalBlob = new Blob([event.data], { type: detectedFormat });
         const audioId = `audio-${Date.now()}`;
         const audioUrl = URL.createObjectURL(originalBlob);
         
         // Create and add response
         const newResponse: Response = {
           id: audioId,
-          text: `Audio response received (${audioSize} bytes, format: ${originalContentType})`,
+          text: `Audio response received (${audioSize} bytes, detected format: ${detectedFormat})`,
           audio_url: audioUrl,
           type: "main",
           timestamp: Date.now(),
-          raw_data: { size: audioSize, type: originalContentType }
+          raw_data: { 
+            size: audioSize, 
+            type: originalContentType, 
+            detectedType: detectedFormat 
+          }
         };
         
         setResponses(prev => [...prev, newResponse]);
@@ -256,7 +288,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           url: audioUrl, 
           id: audioId,
           blob: originalBlob,
-          format: originalContentType
+          format: detectedFormat
         });
         
         // Try playing if not already playing
