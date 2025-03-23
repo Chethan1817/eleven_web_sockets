@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -148,6 +149,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setIsConnecting(true);
       console.log("Starting new session with API URL:", ENDPOINTS.CREATE_AUDIO_SESSION);
       
+      // Get the user ID, use numeric ID instead of phone number
+      const userId = user?.id ? String(user.id) : "";
+      
       const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
         method: "POST",
         headers: {
@@ -155,7 +159,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           "Authorization": `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ 
-          user_id: user?.phone_number || user?.id || "",
+          user_id: userId,
           user_name: user?.name 
         }),
       });
@@ -175,10 +179,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       setSessionId(data.session_id);
       
-      // Connect to WebSocket with the session ID and user ID
-      const userId = user?.phone_number || user?.id || "";
-      
-      // Check if there's a websocket_url in the response, otherwise construct one
+      // Connect to WebSocket with the session ID and user ID - ensure userId is a string
       const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(userId, data.session_id);
       console.log("Connecting to WebSocket URL:", wsUrl);
       
