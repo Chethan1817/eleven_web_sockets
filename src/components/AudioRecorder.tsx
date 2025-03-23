@@ -49,14 +49,18 @@ const AudioRecorder: React.FC = () => {
     }
   }, [isSessionActive, greeting]);
   
-  const handleStartRecording = () => {
-    console.log("Start recording button clicked");
-    startRecording();
-  };
-  
-  const handleStopRecording = () => {
-    console.log("Stop recording button clicked");
-    stopRecording();
+  // Single button handler for all audio actions
+  const handleTalkButtonClick = () => {
+    if (!isSessionActive) {
+      console.log("Starting new session");
+      startSession();
+    } else if (isRecording) {
+      console.log("Stopping recording");
+      stopRecording();
+    } else {
+      console.log("Starting recording");
+      startRecording();
+    }
   };
   
   return (
@@ -95,63 +99,48 @@ const AudioRecorder: React.FC = () => {
         )}
       </div>
       
-      <div className="flex items-center space-x-4">
-        {isSessionActive ? (
-          <>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-14 w-14 rounded-full border-2 border-destructive hover:bg-destructive/10 transition-all duration-300"
-              onClick={stopSession}
-              disabled={isRecording}
-            >
-              <Square className="h-6 w-6 text-destructive" />
-            </Button>
-            
-            <Button
-              variant={isRecording ? "destructive" : "default"}
-              size="icon"
-              className={cn(
-                "h-20 w-20 rounded-full shadow-lg transition-all duration-300",
-                isRecording && "animate-pulse"
-              )}
-              onClick={isRecording ? handleStopRecording : handleStartRecording}
-            >
-              {isRecording ? (
-                <MicOff className="h-8 w-8" />
-              ) : (
-                <Mic className="h-8 w-8" />
-              )}
-            </Button>
-          </>
-        ) : (
-          <Button
-            variant="default"
-            size="lg"
-            className="h-16 w-48 rounded-full shadow-lg transition-all duration-300 text-lg"
-            onClick={startSession}
-            disabled={isConnecting}
-          >
-            {isConnecting ? (
-              <span className="flex items-center">
-                <div className="mr-2 h-4 w-4 rounded-full bg-white animate-pulse" />
-                Connecting...
-              </span>
-            ) : (
-              <span className="flex items-center">
-                <Play className="mr-2 h-5 w-5" />
-                Start Session
-              </span>
-            )}
-          </Button>
-        )}
+      {/* Single Button UI */}
+      <div className="flex items-center justify-center">
+        <Button
+          variant={isRecording ? "destructive" : "default"}
+          size="icon"
+          className={cn(
+            "h-20 w-20 rounded-full shadow-lg transition-all duration-300",
+            isRecording && "animate-pulse",
+            isConnecting && "opacity-70"
+          )}
+          onClick={handleTalkButtonClick}
+          disabled={isConnecting}
+        >
+          {!isSessionActive ? (
+            <Play className="h-8 w-8" />
+          ) : isRecording ? (
+            <MicOff className="h-8 w-8" />
+          ) : (
+            <Mic className="h-8 w-8" />
+          )}
+        </Button>
       </div>
       
+      {/* Session Controls */}
+      {isSessionActive && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4"
+          onClick={stopSession}
+          disabled={isConnecting}
+        >
+          <Square className="h-4 w-4 mr-2" />
+          End Session
+        </Button>
+      )}
+      
       <div className="text-xs text-muted-foreground">
-        {isSessionActive ? (
-          isRecording ? "Recording audio..." : "Press the microphone button to start recording"
+        {!isSessionActive ? (
+          isConnecting ? "Connecting..." : "Start a new session to begin"
         ) : (
-          "Start a new session to begin testing"
+          isRecording ? "Recording audio..." : "Press the button to talk"
         )}
       </div>
     </div>

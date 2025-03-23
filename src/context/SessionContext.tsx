@@ -52,6 +52,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [greeting, setGreeting] = useState<string | null>(null);
   
   const websocketRef = useRef<WebSocket | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   
@@ -74,7 +75,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           "Content-Type": "application/json",
           "Authorization": `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ user_id: user?.phone_number }),
+        body: JSON.stringify({ 
+          user_id: user?.phone_number,
+          user_name: user?.name 
+        }),
       });
       
       if (!response.ok) {
@@ -86,91 +90,30 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Session created response:", data);
       setSessionId(data.session_id);
       
-      // Use the websocket_url from the response instead of constructing it
-      const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(user?.phone_number || "");
-      console.log("Connecting to WebSocket URL:", wsUrl);
+      // Setup audio stream for receiving responses
+      setupAudioReceiveStream(data.receive_url);
       
-      const ws = new WebSocket(wsUrl);
+      setIsSessionActive(true);
+      setIsConnecting(false);
       
-      ws.onopen = () => {
-        console.log("WebSocket connection established");
-        setIsSessionActive(true);
-        setIsConnecting(false);
-        
-        // Set the greeting message with the user's name
-        const userName = user?.name || "there";
-        setGreeting(`Hello ${userName}, how are you doing today?`);
-        
-        // Add the greeting as a response
-        const greetingResponse: Response = {
-          id: `greeting-${Date.now()}`,
-          text: `Hello ${userName}, how are you doing today?`,
-          type: "main",
-          timestamp: Date.now(),
-        };
-        
-        setResponses(prev => [...prev, greetingResponse]);
-        
-        toast({
-          title: "Session Started",
-          description: "Audio streaming session is now active.",
-        });
+      // Set the greeting message with the user's name
+      const userName = user?.name || "there";
+      setGreeting(`Hello ${userName}, how are you doing today?`);
+      
+      // Add the greeting as a response
+      const greetingResponse: Response = {
+        id: `greeting-${Date.now()}`,
+        text: `Hello ${userName}, how are you doing today?`,
+        type: "main",
+        timestamp: Date.now(),
       };
       
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === "transcript") {
-            const newTranscript: Transcript = {
-              id: data.id || `transcript-${Date.now()}`,
-              text: data.text,
-              is_final: data.is_final || false,
-              timestamp: Date.now(),
-            };
-            
-            setTranscripts(prev => {
-              const filteredTranscripts = prev.filter(t => 
-                !(t.id === newTranscript.id && !t.is_final)
-              );
-              return [...filteredTranscripts, newTranscript];
-            });
-            
-            setIsProcessing(true);
-          } else if (data.type === "response") {
-            const newResponse: Response = {
-              id: data.id || `response-${Date.now()}`,
-              text: data.text,
-              audio_url: data.audio_url,
-              type: data.response_type || "main",
-              timestamp: Date.now(),
-            };
-            
-            setResponses(prev => [...prev, newResponse]);
-            setIsProcessing(false);
-          }
-        } catch (error) {
-          console.error("Error processing WebSocket message:", error);
-        }
-      };
+      setResponses(prev => [...prev, greetingResponse]);
       
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        setIsConnecting(false);
-        toast({
-          title: "Connection Error",
-          description: "Failed to establish WebSocket connection.",
-          variant: "destructive",
-        });
-      };
-      
-      ws.onclose = () => {
-        console.log("WebSocket connection closed");
-        setIsSessionActive(false);
-        setIsRecording(false);
-      };
-      
-      websocketRef.current = ws;
+      toast({
+        title: "Session Started",
+        description: "Audio streaming session is now active.",
+      });
       
     } catch (error) {
       setIsConnecting(false);
@@ -183,12 +126,31 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
   
+  const setupAudioReceiveStream = (receiveUrl: string) => {
+    try {
+      // For now, we'll just log that we've set up the receive stream
+      // In a real implementation, you would connect to the audio stream
+      console.log("Setting up audio receive stream from URL:", receiveUrl);
+      
+      // Simulate receiving audio - this would be replaced with real implementation
+      // that connects to the streaming endpoint
+    } catch (error) {
+      console.error("Error setting up audio receive stream:", error);
+    }
+  };
+  
   const stopSession = async () => {
     if (!sessionId || !accessToken) return;
     
     try {
       if (isRecording) {
         stopRecording();
+      }
+      
+      // Close any open audio streams
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
       }
       
       if (websocketRef.current) {
@@ -224,6 +186,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
       
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm;codecs=opus'
@@ -232,15 +195,27 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+      mediaRecorder.ondataavailable = async (event) => {
+        if (event.data.size > 0 && sessionId) {
           audioChunksRef.current.push(event.data);
           
-          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-            console.log("Sending audio chunk, size:", event.data.size);
-            websocketRef.current.send(event.data);
-          } else {
-            console.warn("WebSocket not open, cannot send audio data");
+          try {
+            // Send audio chunk to the new endpoint
+            const formData = new FormData();
+            formData.append('audio', event.data);
+            formData.append('session_id', sessionId);
+            
+            await fetch(ENDPOINTS.SEND_AUDIO_CHUNK, {
+              method: 'POST',
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+              },
+              body: formData
+            });
+            
+            console.log("Audio chunk sent, size:", event.data.size);
+          } catch (error) {
+            console.error("Error sending audio chunk:", error);
           }
         }
       };
@@ -263,7 +238,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive",
       });
     }
-  }, [isSessionActive, isRecording, toast]);
+  }, [isSessionActive, isRecording, sessionId, accessToken, toast]);
   
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
@@ -282,7 +257,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (sessionId !== null) {
       setSessionId(null);
     }
-  }, [transcripts.length, responses.length, sessionId]);
+    if (greeting !== null) {
+      setGreeting(null);
+    }
+  }, [transcripts.length, responses.length, sessionId, greeting]);
   
   return (
     <SessionContext.Provider
