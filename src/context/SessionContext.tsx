@@ -4,6 +4,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS, DEBUG_MODE } from "@/config";
 
+// Persistent WebSocket instance that lives outside React lifecycle
+let persistentWebSocket: WebSocket | null = null;
+
 interface Transcript {
   id: string;
   text: string;
@@ -115,7 +118,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const ws = new WebSocket(wsUrl);
 
-    websocketRef.current = ws; // ✅ Assign early to persist across remounts
+    // Store the WebSocket instance both in the persistent variable and in the ref
+    persistentWebSocket = ws; // ✅ Store outside React lifecycle
+    websocketRef.current = ws; // Still needed for internal tracking
     websocketReadyRef.current = false;
     hasOpenedRef.current = false;
 
@@ -133,6 +138,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }, 30000);
 
     ws.onopen = () => {
+      // Check if this socket is still the current persistent one
+      if (persistentWebSocket !== ws) {
+        console.warn("🛑 Socket mismatch in onopen — connection orphaned");
+        return;
+      }
+
       if (!isMountedRef.current) {
         console.warn("🛑 WebSocket opened after component unmounted — skipping init");
         return;
@@ -168,6 +179,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       const pingInterval = setInterval(() => {
+        // Check if this socket is still the current persistent one
+        if (persistentWebSocket !== ws) {
+          clearInterval(pingInterval);
+          console.log("Clearing ping interval, socket mismatch");
+          return;
+        }
+
         if (ws.readyState === WebSocket.OPEN) {
           try {
             ws.send(JSON.stringify({ type: "ping" }));
@@ -184,9 +202,23 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       (ws as any).pingInterval = pingInterval;
     };
 
-    ws.onmessage = handleWebSocketMessage;
+    ws.onmessage = (event) => {
+      // Check if this socket is still the current persistent one
+      if (persistentWebSocket !== ws) {
+        console.warn("🛑 Socket mismatch in onmessage — ignoring message");
+        return;
+      }
+      
+      handleWebSocketMessage(event);
+    };
 
     ws.onerror = (error) => {
+      // Check if this socket is still the current persistent one
+      if (persistentWebSocket !== ws) {
+        console.warn("🛑 Socket mismatch in onerror — ignoring error");
+        return;
+      }
+
       console.error("❌ WebSocket connection error:", error);
       
       toast({
@@ -197,6 +229,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     ws.onclose = (event) => {
+      // Check if this socket is still the current persistent one
+      if (persistentWebSocket !== ws) {
+        console.warn("🛑 Socket mismatch in onclose — ignoring close event");
+        return;
+      }
+
       console.log(`🔌 WebSocket connection closed: Code ${event.code}`, {
         reason: event.reason,
         wasClean: event.wasClean,
@@ -247,8 +285,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsRecording(false);
     setIsProcessing(false);
     
-    if (websocketRef.current) {
-      const ws = websocketRef.current;
+    // Handle WebSocket closure
+    if (persistentWebSocket) {
+      const ws = persistentWebSocket;
       
       if ((ws as any).pingInterval) {
         clearInterval((ws as any).pingInterval);
@@ -269,6 +308,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log(`WebSocket is already in ${ws.readyState === WebSocket.CLOSED ? 'CLOSED' : 'CLOSING'} state`);
       }
       
+      persistentWebSocket = null;
       websocketRef.current = null;
     }
     
@@ -500,9 +540,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   useEffect(() => {
     return () => {
+      console.log("Component unmounting, but waiting briefly before stopping session...");
+      
       if (!isManuallyStoppingRef.current) {
-        console.log("Component unmounting, but waiting briefly before stopping session...");
-        
         setTimeout(() => {
           const ws = websocketRef.current;
 
@@ -526,9 +566,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [isSessionActive]);
   
   const getWebSocketStateText = () => {
-    if (!websocketRef.current) return 'Not Connected';
+    if (!persistentWebSocket) return 'Not Connected';
     
-    switch (websocketRef.current.readyState) {
+    switch (persistentWebSocket.readyState) {
       case WebSocket.CONNECTING: return 'Connecting (0)';
       case WebSocket.OPEN: return 'Open (1)';
       case WebSocket.CLOSING: return 'Closing (2)';
@@ -545,7 +585,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     transcripts,
     responses,
     sessionId,
-    websocket: websocketRef.current,
+    websocket: persistentWebSocket, // Use the persistent WebSocket here
     startSession,
     stopSession,
     startRecording,
