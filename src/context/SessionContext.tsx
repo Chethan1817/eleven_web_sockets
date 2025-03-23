@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -115,6 +114,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.log("📥 RECEIVED FROM SERVER (text data):", event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
         const data = JSON.parse(event.data);
         console.log("📥 PARSED JSON DATA:", data);
+        
+        if (data.type === "connection_status" && data.status === "connected") {
+          console.log("Connection confirmed by server");
+        }
         
         if (data.text) {
           const newResponse: Response = {
@@ -243,6 +246,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][ws.readyState]);
       
       const connectionTimeout = setTimeout(() => {
+        console.log("WebSocket connection timeout after 10 seconds");
         if (ws.readyState !== WebSocket.OPEN) {
           console.error("WebSocket connection timeout");
           ws.close();
@@ -261,12 +265,15 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsSessionActive(true);
         setIsConnecting(false);
         
-        // Send an initial ping to test the connection
         try {
-          ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
-          console.log("📤 SENT PING TO SERVER");
+          ws.send(JSON.stringify({ 
+            type: "connection_check", 
+            message: "Client connected successfully",
+            timestamp: Date.now() 
+          }));
+          console.log("📤 SENT CONNECTION CHECK TO SERVER");
         } catch (err) {
-          console.error("Error sending initial ping:", err);
+          console.error("Error sending connection check:", err);
         }
         
         const userName = user?.name || "there";

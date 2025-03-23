@@ -21,6 +21,13 @@ const StatusIndicator: React.FC = () => {
   const wsClosing = wsState === WebSocket.CLOSING;
   const wsClosed = wsState === WebSocket.CLOSED || wsState === -1;
   
+  // Debug WebSocket state in dev console
+  React.useEffect(() => {
+    if (websocket) {
+      console.log(`WebSocket state: ${wsState} (${["CONNECTING", "OPEN", "CLOSING", "CLOSED"][wsState]})`);
+    }
+  }, [wsState, websocket]);
+  
   if (!isSessionActive && !isConnecting) {
     return (
       <Badge variant="outline" className="bg-secondary/50 px-3 py-1">
