@@ -66,12 +66,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const data = JSON.parse(event.data);
         console.log("📥 PARSED JSON DATA:", data);
         
-        if (data.type === "connection_status" && data.status === "connected") {
-          console.log("Connection confirmed by server");
-          setIsConnecting(false);
-          setIsSessionActive(true);
-        }
-        
         if (data.text) {
           const newResponse: Response = {
             id: `resp-${Date.now()}`,
@@ -344,9 +338,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       const ws = createWebSocketConnection(userIdString, newSessionId);
       websocketRef.current = ws;
-      
-      setIsSessionActive(true);
-      setIsConnecting(false);
       
       toast({
         title: "Session Started",

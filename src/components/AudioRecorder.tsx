@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
@@ -17,6 +16,7 @@ const AudioRecorder: React.FC = () => {
     stopSession, 
     startRecording, 
     stopRecording,
+    websocket
   } = useSession();
   
   const { toast } = useToast();
@@ -93,10 +93,12 @@ const AudioRecorder: React.FC = () => {
         : "Connecting to server...");
     } else if (!isSessionActive) {
       setDisabledReason(null); // Button is enabled to start session
+    } else if (websocket && websocket.readyState !== WebSocket.OPEN) {
+      setDisabledReason("Waiting for WebSocket connection...");
     } else {
       setDisabledReason(null); // Button is enabled for recording
     }
-  }, [isSessionActive, isConnecting, micPermission, checkingMic, connectionAttemptTime]);
+  }, [isSessionActive, isConnecting, micPermission, checkingMic, connectionAttemptTime, websocket]);
   
   const handleStartSession = () => {
     console.log("Starting new session");
@@ -120,7 +122,11 @@ const AudioRecorder: React.FC = () => {
   };
   
   const isRecordButtonDisabled = (): boolean => {
-    return !isSessionActive || micPermission === false || checkingMic || isConnecting;
+    return !isSessionActive || 
+           micPermission === false || 
+           checkingMic || 
+           isConnecting || 
+           (websocket && websocket.readyState !== WebSocket.OPEN);
   };
   
   return (
@@ -177,7 +183,6 @@ const AudioRecorder: React.FC = () => {
       </div>
       
       <div className="flex items-center justify-center gap-4">
-        {/* Session Creation Button */}
         <Button
           variant="secondary"
           size="icon"
@@ -193,7 +198,6 @@ const AudioRecorder: React.FC = () => {
           <Video className="h-6 w-6" />
         </Button>
         
-        {/* Record Button */}
         <Button
           variant={isRecording ? "destructive" : "default"}
           size="icon"
@@ -243,7 +247,9 @@ const AudioRecorder: React.FC = () => {
         ) : (
           isRecording ? (
             isAudioDetected ? "Audio detected and sending..." : "Waiting for audio..."
-          ) : "Press the microphone button to talk"
+          ) : websocket?.readyState !== WebSocket.OPEN ? 
+            "Waiting for connection to fully establish..." : 
+            "Press the microphone button to talk"
         )}
       </div>
     </div>
