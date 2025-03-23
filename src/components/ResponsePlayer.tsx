@@ -32,7 +32,9 @@ const ResponsePlayer: React.FC = () => {
     });
     
     audio.addEventListener('error', (e) => {
-      const error = e.currentTarget.error;
+      // Fix: Cast to HTMLMediaElement to access error property
+      const mediaElement = e.currentTarget as HTMLMediaElement;
+      const error = mediaElement.error;
       let errorMsg = "Unknown audio error";
       
       if (error) {
