@@ -1,9 +1,12 @@
+
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
-import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2 } from "lucide-react";
+import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2, Globe, Wifi } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 const AudioRecorder: React.FC = () => {
   const { 
@@ -15,7 +18,9 @@ const AudioRecorder: React.FC = () => {
     stopSession, 
     startRecording, 
     stopRecording,
-    interruptResponse
+    interruptResponse,
+    useHttpStreaming,
+    setUseHttpStreaming
   } = useSession();
   
   const { toast } = useToast();
@@ -96,6 +101,19 @@ const AudioRecorder: React.FC = () => {
     interruptResponse();
   };
   
+  const handleHttpToggleChange = (checked: boolean) => {
+    if (!isSessionActive) {
+      setUseHttpStreaming(checked);
+      console.log(`Switched to ${checked ? 'HTTP streaming' : 'WebSocket'} mode`);
+    } else {
+      toast({
+        title: "Cannot Change Mode",
+        description: "Please end the current session before changing connection mode.",
+        variant: "destructive",
+      });
+    }
+  };
+  
   return (
     <div className="w-full flex flex-col items-center space-y-6 py-4">
       {showGreeting && greeting && (
@@ -109,6 +127,22 @@ const AudioRecorder: React.FC = () => {
           Microphone access is denied. Please enable it in your browser settings.
         </div>
       )}
+      
+      <div className="w-full flex justify-center mb-4">
+        <div className="flex items-center space-x-2">
+          <Wifi className="h-4 w-4 text-muted-foreground" />
+          <Switch 
+            id="connection-mode" 
+            checked={useHttpStreaming}
+            onCheckedChange={handleHttpToggleChange}
+            disabled={isSessionActive}
+          />
+          <Label htmlFor="connection-mode" className="text-sm flex items-center">
+            <Globe className="h-4 w-4 mr-1" />
+            HTTP Streaming
+          </Label>
+        </div>
+      </div>
       
       <div 
         className={cn(
@@ -202,7 +236,7 @@ const AudioRecorder: React.FC = () => {
       
       <div className="text-xs text-muted-foreground">
         {!isSessionActive ? (
-          isConnecting ? "Connecting..." : "Start a new session to begin"
+          isConnecting ? `Connecting... (${useHttpStreaming ? 'HTTP' : 'WebSocket'})` : `Start a new session to begin (${useHttpStreaming ? 'HTTP' : 'WebSocket'} mode)`
         ) : (
           isRecording ? (
             isAudioDetected ? "Audio detected and sending..." : "Waiting for audio..."

@@ -3,6 +3,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS } from "@/config";
 import { playAudio, isMP3Format } from "@/utils/audioUtils";
+import { 
+  createHttpSession, 
+  startHttpStreaming, 
+  closeHttpSession, 
+  HttpAudioRecorder 
+} from "@/utils/httpStreamingUtils";
 
 interface Transcript {
   id: string;
@@ -29,6 +35,7 @@ interface SessionContextType {
   responses: Response[];
   sessionId: string | null;
   websocket: WebSocket | null;
+  streamController: AbortController | null;
   greeting: string | null;
   startSession: () => Promise<void>;
   stopSession: () => Promise<void>;
@@ -36,6 +43,8 @@ interface SessionContextType {
   stopRecording: () => void;
   clearSession: () => void;
   interruptResponse: () => void;
+  useHttpStreaming: boolean;
+  setUseHttpStreaming: (useHttp: boolean) => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -52,10 +61,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
   const [greeting, setGreeting] = useState<string | null>(null);
+  const [useHttpStreaming, setUseHttpStreaming] = useState<boolean>(true);
   
   const websocketRef = useRef<WebSocket | null>(null);
+  const streamControllerRef = useRef<AbortController | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const httpRecorderRef = useRef<HttpAudioRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -97,7 +109,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           } else {
             console.error(`Failed to play audio ${next.id}`);
             isPlayingRef.current = false;
-            setTimeout(playNextInQueue, 100); // Try next audio after delay
+            setTimeout(playNextInQueue, 100);
           }
         } catch (err) {
           console.error("Exception in audio playback:", err);
@@ -109,515 +121,58 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
   
   const handleWebSocketMessage = useCallback(async (event: MessageEvent) => {
-    try {
-      if (typeof event.data === 'string') {
-        console.log("📥 RECEIVED FROM SERVER (text data):", event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
-        
-        try {
-          const data = JSON.parse(event.data);
-          console.log("📥 PARSED JSON DATA:", data);
-          
-          if (data.type === "connection_status" && data.status === "connected") {
-            console.log("Connection confirmed by server");
-            setIsConnecting(false);
-            setIsSessionActive(true);
-          }
-          
-          if (data.text) {
-            const newResponse: Response = {
-              id: `resp-${Date.now()}`,
-              text: data.text,
-              type: data.type || "main",
-              timestamp: Date.now(),
-              raw_data: data
-            };
-            
-            setResponses(prev => [...prev, newResponse]);
-          }
-          
-          if (data.transcript) {
-            const newTranscript: Transcript = {
-              id: `trans-${Date.now()}`,
-              text: data.transcript,
-              is_final: data.is_final || false,
-              timestamp: Date.now(),
-            };
-            
-            setTranscripts(prev => [...prev, newTranscript]);
-          }
-        } catch (err) {
-          console.warn("Failed to parse WebSocket text message as JSON:", err);
-          console.log("Raw message content:", event.data);
-        }
-      }
-      else if (event.data instanceof Blob) {
-        const audioSize = event.data.size;
-        
-        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of audio`);
-        
-        const isMp3 = await isMP3Format(event.data);
-        const audioFormat = isMp3 ? "mp3" : "pcm";
-        const audioMimeType = isMp3 ? "audio/mpeg" : "audio/pcm";
-        
-        console.log(`Audio format detected: ${audioFormat.toUpperCase()}`);
-        
-        const audioBlob = new Blob([event.data], { type: audioMimeType });
-        const audioId = `audio-${Date.now()}`;
-        
-        const placeholderUrl = URL.createObjectURL(audioBlob);
-        
-        const newResponse: Response = {
-          id: audioId,
-          text: `Audio response received (${audioSize} bytes, ${audioFormat.toUpperCase()} format)`,
-          audio_url: placeholderUrl,
-          type: "main",
-          timestamp: Date.now(),
-          raw_data: { 
-            size: audioSize, 
-            type: audioMimeType,
-            format: audioFormat.toUpperCase() 
-          }
-        };
-        
-        setResponses(prev => [...prev, newResponse]);
-        
-        audioQueueRef.current.push({
-          blob: audioBlob, 
-          id: audioId,
-          format: audioFormat
-        });
-        
-        if (!isPlayingRef.current) {
-          playNextInQueue();
-        }
-      }
-    } catch (error) {
-      console.error("Error processing WebSocket message:", error);
-    }
-  }, [playNextInQueue]);
-  
-  const createWebSocketConnection = useCallback((url: string, userId: string, sessionId: string) => {
-    console.log("Creating WebSocket connection to:", url);
-    
-    if (websocketRef.current && websocketRef.current.readyState !== WebSocket.CLOSED) {
-      console.log("Closing existing WebSocket connection");
-      
-      if ((websocketRef.current as any).pingInterval) {
-        clearInterval((websocketRef.current as any).pingInterval);
-      }
-      
-      websocketRef.current.close();
-    }
-    
-    const ws = new WebSocket(url);
-    console.log("WebSocket object created with readyState:", ws.readyState, 
-      ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][ws.readyState]);
-    
-    const connectionTimeout = setTimeout(() => {
-      console.log("WebSocket connection timeout after 30 seconds");
-      if (ws.readyState !== WebSocket.OPEN) {
-        console.error("WebSocket connection timeout");
-        ws.close();
-        setIsConnecting(false);
-        toast({
-          title: "Connection Timeout",
-          description: "Failed to establish WebSocket connection. Please try again.",
-          variant: "destructive",
-        });
-      }
-    }, 30000); // 30 seconds timeout for initial connection
-    
-    ws.onopen = () => {
-      clearTimeout(connectionTimeout);
-      console.log(`📡 WebSocket connection established (readyState: ${ws.readyState})`);
-      
-      setIsSessionActive(true);
-      setIsConnecting(false);
+    if (typeof event.data === 'string') {
+      console.log("📥 RECEIVED FROM SERVER (text data):", event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
       
       try {
-        const checkMessage = { 
-          type: "connection_check", 
-          message: "Client connected successfully",
-          user_id: userId,
-          session_id: sessionId,
-          timestamp: Date.now() 
-        };
-        ws.send(JSON.stringify(checkMessage));
-        console.log("📤 SENT TO SERVER:", checkMessage);
+        const data = JSON.parse(event.data);
+        console.log("📥 PARSED JSON DATA:", data);
+        
+        if (data.type === "connection_status" && data.status === "connected") {
+          console.log("Connection confirmed by server");
+          setIsConnecting(false);
+          setIsSessionActive(true);
+        }
+        
+        if (data.text) {
+          const newResponse: Response = {
+            id: `resp-${Date.now()}`,
+            text: data.text,
+            type: data.type || "main",
+            timestamp: Date.now(),
+            raw_data: data
+          };
+          
+          setResponses(prev => [...prev, newResponse]);
+        }
+        
+        if (data.transcript) {
+          const newTranscript: Transcript = {
+            id: `trans-${Date.now()}`,
+            text: data.transcript,
+            is_final: data.is_final || false,
+            timestamp: Date.now(),
+          };
+          
+          setTranscripts(prev => [...prev, newTranscript]);
+        }
       } catch (err) {
-        console.error("Error sending connection check:", err);
+        console.warn("Failed to parse WebSocket text message as JSON:", err);
+        console.log("Raw message content:", event.data);
       }
+    } else if (event.data instanceof Blob) {
+      const audioSize = event.data.size;
       
-      const userName = user?.name || "there";
-      setGreeting(`Hello ${userName}, how are you doing today?`);
+      console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of audio`);
       
-      const greetingResponse: Response = {
-        id: `greeting-${Date.now()}`,
-        text: `Hello ${userName}, how are you doing today?`,
-        type: "main",
-        timestamp: Date.now(),
-      };
+      const isMp3 = await isMP3Format(event.data);
+      const audioFormat = isMp3 ? "mp3" : "pcm";
+      const audioMimeType = isMp3 ? "audio/mpeg" : "audio/pcm";
       
-      setResponses(prev => [...prev, greetingResponse]);
+      console.log(`Audio format detected: ${audioFormat.toUpperCase()}`);
       
-      toast({
-        title: "Session Started",
-        description: "Audio streaming session is now active.",
-      });
-    };
-    
-    ws.onmessage = handleWebSocketMessage;
-    
-    ws.onerror = (error) => {
-      clearTimeout(connectionTimeout);
-      console.error("📡 WebSocket error:", error);
+      const audioBlob = new Blob([event.data], { type: audioMimeType });
+      const audioId = `audio-${Date.now()}`;
       
-      console.error("Error details:", {
-        type: error.type,
-        message: (error as any).message,
-        target: error.target
-      });
-      
-      setIsConnecting(false);
-      
-      toast({
-        title: "Connection Error",
-        description: "Error with audio streaming connection. Please check console for details.",
-        variant: "destructive",
-      });
-    };
-    
-    ws.onclose = (event) => {
-      clearTimeout(connectionTimeout);
-      
-      if ((ws as any).pingInterval) {
-        clearInterval((ws as any).pingInterval);
-      }
-      
-      console.log(`📡 WebSocket connection closed: Code ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''}`);
-      
-      if (event.code === 1006) {
-        console.log("Abnormal closure detected. This could indicate network issues or server problems.");
-      }
-      
-      if (isSessionActive) {
-        setIsSessionActive(false);
-        
-        toast({
-          title: "Connection Closed",
-          description: "Audio streaming session has ended." + (event.reason ? ` Reason: ${event.reason}` : ''),
-        });
-      } else if (isConnecting) {
-        setIsConnecting(false);
-        
-        toast({
-          title: "Connection Failed",
-          description: "Could not establish connection to the audio server." + (event.reason ? ` Reason: ${event.reason}` : ''),
-          variant: "destructive",
-        });
-      }
-    };
-    
-    return ws;
-  }, [handleWebSocketMessage, isSessionActive, setGreeting, setIsConnecting, setIsSessionActive, setResponses, toast, user?.name]);
-  
-  const startSession = async () => {
-    if (!accessToken) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to start a session.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    try {
-      setIsConnecting(true);
-      console.log("Starting new session with API URL:", ENDPOINTS.CREATE_AUDIO_SESSION);
-      
-      const userId = user?.id ? String(user.id) : "";
-      const requestBody = { 
-        user_id: userId,
-        user_name: user?.name 
-      };
-      
-      console.log("📤 SENDING TO SERVER (create session):", requestBody);
-      
-      const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error response:", errorText);
-        try {
-          const errorData = JSON.parse(errorText);
-          throw new Error(errorData.detail || `Failed to create audio session (${response.status})`);
-        } catch (e) {
-          throw new Error(`Server error: ${response.status} - ${errorText.substring(0, 100)}`);
-        }
-      }
-      
-      const data = await response.json();
-      console.log("📥 RECEIVED FROM SERVER (session creation):", data);
-      
-      if (!data.session_id) {
-        throw new Error("No session ID returned from server");
-      }
-      
-      setSessionId(data.session_id);
-      
-      const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(userId, data.session_id);
-      console.log("Connecting to WebSocket URL:", wsUrl);
-      
-      const ws = createWebSocketConnection(wsUrl, userId, data.session_id);
-      websocketRef.current = ws;
-      
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
-            console.log("📤 PING sent to keep connection alive");
-          } catch (err) {
-            console.error("Error sending ping:", err);
-            clearInterval(pingInterval);
-          }
-        } else if (ws.readyState !== WebSocket.CONNECTING) {
-          console.log("Clearing ping interval, WebSocket is no longer open");
-          clearInterval(pingInterval);
-        }
-      }, 30000); // 30-second ping interval
-      
-    } catch (error) {
-      setIsConnecting(false);
-      const errorMessage = error instanceof Error ? error.message : "Failed to start session";
-      console.error("Session start error:", errorMessage, error);
-      toast({
-        title: "Session Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    }
-  };
-  
-  const stopSession = async () => {
-    if (!sessionId) return;
-    
-    try {
-      if (isRecording) {
-        stopRecording();
-      }
-      
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach(track => track.stop());
-        audioStreamRef.current = null;
-      }
-      
-      if (websocketRef.current) {
-        websocketRef.current.close();
-        websocketRef.current = null;
-      }
-      
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close();
-      }
-      
-      clearAudioQueue();
-      
-      if (accessToken) {
-        try {
-          const endpointUrl = ENDPOINTS.END_AUDIO_SESSION(sessionId);
-          console.log("📤 SENDING TO SERVER (end session):", { session_id: sessionId });
-          
-          await fetch(endpointUrl, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-            },
-          });
-        } catch (endError) {
-          console.error("Error ending session via API:", endError);
-        }
-      }
-      
-      setIsSessionActive(false);
-      setSessionId(null);
-      
-      toast({
-        title: "Session Ended",
-        description: "Audio streaming session has been terminated.",
-      });
-      
-    } catch (error) {
-      console.error("Error stopping session:", error);
-      toast({
-        title: "Error",
-        description: "Failed to properly end the session.",
-        variant: "destructive",
-      });
-    }
-  };
-  
-  const startRecording = useCallback(async () => {
-    if (!isSessionActive || isRecording || !websocketRef.current) return;
-    
-    try {
-      console.log("Attempting to access microphone...");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log("Microphone access granted");
-      audioStreamRef.current = stream;
-      
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      
-      const mimeTypes = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4',
-        'audio/ogg;codecs=opus',
-        'audio/ogg'
-      ];
-      
-      let mimeType = 'audio/webm;codecs=opus';
-      
-      for (const type of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(type)) {
-          mimeType = type;
-          console.log(`Using supported MIME type for recording: ${mimeType}`);
-          break;
-        }
-      }
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: mimeType
-      });
-      
-      console.log(`Created MediaRecorder with MIME type: ${mimeType}`);
-      
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0) {
-          console.log(`Recording data available: ${event.data.size} bytes, type: ${event.data.type}`);
-          audioChunksRef.current.push(event.data);
-          
-          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-            console.log(`📤 SENDING TO SERVER (audio): ${event.data.size} bytes, type: ${event.data.type}`);
-            websocketRef.current.send(event.data);
-            console.log(`Audio data sent to server`);
-          } else {
-            console.error("Cannot send audio:", {
-              dataSize: event.data.size,
-              wsExists: !!websocketRef.current,
-              wsState: websocketRef.current?.readyState,
-              wsStateDesc: websocketRef.current ? 
-                ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][websocketRef.current.readyState] : "NO_WEBSOCKET"
-            });
-          }
-        } else {
-          console.log("Recording data available but size is 0");
-        }
-      };
-      
-      mediaRecorder.onstart = () => {
-        console.log("MediaRecorder started");
-        setIsRecording(true);
-      };
-      
-      mediaRecorder.onstop = () => {
-        console.log("MediaRecorder stopped");
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
-      };
-      
-      mediaRecorder.onerror = (error) => {
-        console.error("MediaRecorder error:", error);
-      };
-      
-      mediaRecorder.start(100);
-      console.log("Recording started successfully");
-      
-    } catch (error) {
-      console.error("Error starting recording:", error);
-      toast({
-        title: "Recording Error",
-        description: "Could not access microphone. Please check your browser permissions.",
-        variant: "destructive",
-      });
-    }
-  }, [isSessionActive, isRecording, toast]);
-  
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
-      console.log("Stopping recording...");
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      console.log("Recording stopped");
-    }
-  }, [isRecording]);
-  
-  const interruptResponse = useCallback(() => {
-    if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-      const interruptCommand = { command: "interrupt" };
-      console.log("📤 SENDING TO SERVER (command):", interruptCommand);
-      websocketRef.current.send(JSON.stringify(interruptCommand));
-      
-      clearAudioQueue();
-    }
-  }, [clearAudioQueue]);
-  
-  const clearSession = useCallback(() => {
-    if (transcripts.length > 0) {
-      setTranscripts([]);
-    }
-    if (responses.length > 0) {
-      setResponses([]);
-    }
-    if (sessionId !== null) {
-      setSessionId(null);
-    }
-    if (greeting !== null) {
-      setGreeting(null);
-    }
-  }, [transcripts.length, responses.length, sessionId, greeting]);
-  
-  return (
-    <SessionContext.Provider
-      value={{
-        isSessionActive,
-        isRecording,
-        isConnecting,
-        isProcessing,
-        transcripts,
-        responses,
-        sessionId,
-        websocket: websocketRef.current,
-        greeting,
-        startSession,
-        stopSession,
-        startRecording,
-        stopRecording,
-        clearSession,
-        interruptResponse,
-      }}
-    >
-      {children}
-    </SessionContext.Provider>
-  );
-};
 
-export const useSession = () => {
-  const context = useContext(SessionContext);
-  if (context === undefined) {
-    throw new Error("useSession must be used within a SessionProvider");
-  }
-  return context;
-};
+

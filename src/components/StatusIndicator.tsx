@@ -3,7 +3,7 @@ import React from "react";
 import { useSession } from "@/context/SessionContext";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Activity, Loader2, CheckCircle2, Clock, Radio, AlertTriangle, Wifi, WifiOff } from "lucide-react";
+import { Activity, Loader2, CheckCircle2, Clock, Radio, AlertTriangle, Wifi, WifiOff, Globe } from "lucide-react";
 
 const StatusIndicator: React.FC = () => {
   const { 
@@ -11,10 +11,15 @@ const StatusIndicator: React.FC = () => {
     isRecording,
     isConnecting, 
     isProcessing,
-    websocket
+    websocket,
+    streamController,
+    useHttpStreaming
   } = useSession();
   
-  // Check actual WebSocket connection state
+  // HTTP Streaming state
+  const httpActive = isSessionActive && useHttpStreaming && !!streamController;
+  
+  // Check WebSocket connection state (for legacy mode)
   const wsState = websocket ? websocket.readyState : -1;
   const wsConnected = wsState === WebSocket.OPEN;
   const wsConnecting = wsState === WebSocket.CONNECTING;
@@ -37,6 +42,7 @@ const StatusIndicator: React.FC = () => {
     }
   }, [wsState, websocket]);
   
+  // Idle state
   if (!isSessionActive && !isConnecting) {
     return (
       <Badge variant="outline" className="bg-secondary/50 px-3 py-1">
@@ -46,7 +52,8 @@ const StatusIndicator: React.FC = () => {
     );
   }
   
-  if (isConnecting || wsConnecting) {
+  // Connecting state
+  if (isConnecting) {
     return (
       <Badge variant="outline" className="bg-primary/10 text-primary px-3 py-1">
         <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -55,6 +62,44 @@ const StatusIndicator: React.FC = () => {
     );
   }
   
+  // HTTP Streaming mode
+  if (useHttpStreaming) {
+    if (isSessionActive && httpActive) {
+      if (isRecording) {
+        return (
+          <Badge variant="outline" className="bg-destructive/10 text-destructive px-3 py-1 animate-pulse">
+            <Activity className="h-3 w-3 mr-1" />
+            <span>Recording (HTTP)</span>
+          </Badge>
+        );
+      }
+      
+      if (isProcessing) {
+        return (
+          <Badge variant="outline" className="bg-primary/20 text-primary px-3 py-1">
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            <span>Processing (HTTP)</span>
+          </Badge>
+        );
+      }
+      
+      return (
+        <Badge variant="outline" className="bg-green-500/10 text-green-600 px-3 py-1">
+          <Globe className="h-3 w-3 mr-1" />
+          <span>Connected (HTTP)</span>
+        </Badge>
+      );
+    }
+    
+    return (
+      <Badge variant="outline" className="bg-amber-500/10 text-amber-600 px-3 py-1">
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        <span>HTTP Connection Issue</span>
+      </Badge>
+    );
+  }
+  
+  // WebSocket mode (legacy)
   if (isSessionActive && (!wsConnected || wsClosing)) {
     return (
       <Badge variant="outline" className="bg-amber-500/10 text-amber-600 px-3 py-1">
