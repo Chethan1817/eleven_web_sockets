@@ -126,8 +126,28 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }, 30000);
     
     ws.onopen = () => {
-      console.log("WebSocket connection opened successfully", { readyState: ws.readyState });
+      console.log("✅ WebSocket connection opened successfully", { readyState: ws.readyState });
       clearTimeout(connectionTimeoutId);
+      
+      // Signal to the UI that connection is established
+      setIsConnecting(false);
+      setIsSessionActive(true);
+      
+      // Send a connection confirmation message to the server
+      try {
+        ws.send(JSON.stringify({ 
+          type: "connection_status", 
+          status: "client_connected",
+          client_info: {
+            user_id: userId,
+            session_id: sessionId,
+            timestamp: Date.now()
+          }
+        }));
+        console.log("Sent connection confirmation to server");
+      } catch (err) {
+        console.error("Error sending connection confirmation:", err);
+      }
       
       const pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -149,7 +169,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     ws.onmessage = handleWebSocketMessage;
     
     ws.onerror = (error) => {
-      console.error("WebSocket connection error:", error);
+      console.error("❌ WebSocket connection error:", error);
       
       toast({
         title: "Connection Error",
@@ -159,7 +179,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     
     ws.onclose = (event) => {
-      console.log(`WebSocket connection closed: Code ${event.code}`, {
+      console.log(`🔌 WebSocket connection closed: Code ${event.code}`, {
         reason: event.reason,
         wasClean: event.wasClean
       });
@@ -335,6 +355,19 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
+    // Check WebSocket readyState before proceeding
+    if (!websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) {
+      console.error("Cannot start recording: WebSocket is not in OPEN state", 
+        websocketRef.current ? `Current state: ${websocketRef.current.readyState}` : "WebSocket not initialized");
+      
+      toast({
+        title: "Connection Issue",
+        description: "Cannot start recording as the WebSocket connection is not ready. Please try restarting the session.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
       setIsRecording(true);
       
@@ -348,9 +381,19 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       audioChunksRef.current = [];
       
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+        if (event.data.size > 0 && 
+            websocketRef.current && 
+            websocketRef.current.readyState === WebSocket.OPEN) {
           console.log(`Sending audio chunk (${event.data.size} bytes) to WebSocket`);
           websocketRef.current.send(event.data);
+        } else {
+          if (!websocketRef.current) {
+            console.warn("Cannot send audio: WebSocket is not initialized");
+          } else if (websocketRef.current.readyState !== WebSocket.OPEN) {
+            console.warn(`Cannot send audio: WebSocket is not open (state: ${websocketRef.current.readyState})`);
+          } else if (event.data.size <= 0) {
+            console.log("Empty audio chunk received - no data to send");
+          }
         }
       };
       
@@ -360,6 +403,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
       
       mediaRecorderRef.current = recorder;
+      
+      // Log WebSocket state before starting recorder
+      console.log(`Starting MediaRecorder with WebSocket in state: ${websocketRef.current.readyState}`, {
+        CONNECTING: WebSocket.CONNECTING,
+        OPEN: WebSocket.OPEN,
+        CLOSING: WebSocket.CLOSING,
+        CLOSED: WebSocket.CLOSED,
+      });
       
       recorder.start(100); // Send data in 100ms chunks
       console.log("Recording started successfully - speak now");
