@@ -445,6 +445,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 description: "HTTP streaming connection is active.",
                 variant: "default"
               });
+              
+              // IMPORTANT: Mark session as active immediately after setup
+              setIsSessionActive(true);
             } else if (status === "disconnected" || status === "error") {
               console.log(`Session ${status}: ${message}`);
               if (sessionActiveRef.current && !isManuallyStoppingRef.current) {
@@ -622,9 +625,23 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [clearAudioQueue]);
   
   useEffect(() => {
+    const initialSync = () => {
+      sessionActiveRef.current = isSessionActive;
+      console.log("Initial session state sync:", { isSessionActive, sessionActiveRef: sessionActiveRef.current });
+    };
+    
+    initialSync();
+  }, []);
+  
+  useEffect(() => {
     return () => {
       if (!isManuallyStoppingRef.current) {
+        console.log("Component unmounting, stopping session if not manual:", { 
+          isManuallyStoppingRef: isManuallyStoppingRef.current
+        });
         stopSession();
+      } else {
+        console.log("Component unmounting, manual stop in progress - not calling stopSession again");
       }
     };
   }, [stopSession]);
@@ -661,7 +678,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isSessionActive,
     isConnecting,
     hasStreamController: !!streamControllerRef.current,
-    sessionId
+    sessionId,
+    manuallyStoppingRef: isManuallyStoppingRef.current
   });
   
   return (

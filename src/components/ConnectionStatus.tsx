@@ -11,12 +11,16 @@ const ConnectionStatus: React.FC = () => {
     streamController
   } = useSession();
   
-  console.log("ConnectionStatus rendering with:", { 
+  // Use a more detailed debug log to track rendering and props
+  console.log("ConnectionStatus rendering with detailed state:", { 
     isSessionActive, 
     isConnecting, 
-    hasStreamController: !!streamController 
+    hasStreamController: !!streamController,
+    sessionActiveRef: sessionActiveRef?.current,
+    renderTime: new Date().toISOString()
   });
   
+  // Handle connecting state
   if (isConnecting) {
     return (
       <Badge variant="outline" className="bg-primary/10 text-primary px-3 py-1">
@@ -26,6 +30,7 @@ const ConnectionStatus: React.FC = () => {
     );
   }
   
+  // Handle connected state - this requires both isSessionActive AND streamController
   if (isSessionActive && streamController) {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-600 px-3 py-1">
@@ -35,6 +40,7 @@ const ConnectionStatus: React.FC = () => {
     );
   }
   
+  // Disconnected state - default fallback
   return (
     <Badge variant="outline" className="bg-secondary/50 px-3 py-1">
       <WifiOff className="h-3 w-3 mr-1" />
