@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -301,28 +302,28 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
-    isManuallyStoppingRef.current = true;
-    
-    if (isSessionActive || sessionActiveRef.current) {
-      console.log("Closing existing session before starting a new one");
-      await stopSession();
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
+    // Prevent duplicate attempts
+    if (isConnecting || websocketRef.current?.readyState === WebSocket.CONNECTING) {
+      console.warn("🔁 Already connecting, skipping duplicate startSession");
+      return;
     }
     
-    isManuallyStoppingRef.current = false;
-    
+    // Clean slate
+    websocketRef.current = null;
+    setSessionId(null);
     setIsConnecting(true);
     sessionActiveRef.current = true;
+    isManuallyStoppingRef.current = false;
     
     try {
-      console.log("Starting new session...");
+      console.log("🚀 Starting new session...");
       const userIdString = String(user.id);
       
       const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Client-Request": `voice-${Date.now()}`, // Optional trace header
           ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {})
         },
         body: JSON.stringify({ user_id: userIdString })
@@ -334,6 +335,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       const data = await response.json();
       const newSessionId = data.session_id;
+      
+      console.log("🆕 Received session_id:", newSessionId);
       setSessionId(newSessionId);
       
       const ws = createWebSocketConnection(userIdString, newSessionId);
@@ -341,11 +344,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       toast({
         title: "Session Started",
-        description: "WebSocket connection established successfully.",
+        description: "WebSocket connection initiated.",
         variant: "default"
       });
+      
     } catch (error) {
-      console.error("Failed to start session:", error);
+      console.error("❌ Failed to start session:", error);
       setIsConnecting(false);
       setIsSessionActive(false);
       sessionActiveRef.current = false;
@@ -356,7 +360,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive"
       });
     }
-  }, [user, accessToken, stopSession, toast, createWebSocketConnection, isSessionActive]);
+  }, [user, accessToken, toast, createWebSocketConnection]);
   
   const startRecording = useCallback(async () => {
     if (!isSessionActive) {
