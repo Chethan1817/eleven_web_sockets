@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -58,10 +59,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const audioQueueRef = useRef<{url: string, id: string, blob: Blob}[]>([]);
+  const audioQueueRef = useRef<{url: string, id: string, blob: Blob, format: string}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   
+  // Create audio player on component mount
   useEffect(() => {
     const audioPlayer = new Audio();
     
@@ -98,37 +100,95 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
   
+  // Function to clear the audio queue and stop current playback
   const clearAudioQueue = useCallback(() => {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
       audioPlayerRef.current.src = '';
     }
+    
+    // Clean up blob URLs to avoid memory leaks
+    audioQueueRef.current.forEach(item => {
+      try {
+        URL.revokeObjectURL(item.url);
+      } catch (err) {
+        console.error("Error revoking URL:", err);
+      }
+    });
+    
     isPlayingRef.current = false;
     audioQueueRef.current = [];
+  }, []);
+  
+  // Try to play audio with different formats if one fails
+  const tryPlayAudio = useCallback(async (blob: Blob, id: string): Promise<boolean> => {
+    if (!audioPlayerRef.current) return false;
+    
+    // Try different audio formats
+    const formatsToTry = [
+      { type: 'audio/mpeg', ext: 'mp3' },
+      { type: 'audio/wav', ext: 'wav' },
+      { type: 'audio/webm', ext: 'webm' },
+      { type: 'audio/aac', ext: 'aac' },
+      { type: 'audio/ogg', ext: 'ogg' },
+    ];
+    
+    // Try the original blob first
+    try {
+      const originalUrl = URL.createObjectURL(blob);
+      audioPlayerRef.current.src = originalUrl;
+      await audioPlayerRef.current.play();
+      console.log(`Successfully playing audio ${id} with original format: ${blob.type}`);
+      return true;
+    } catch (err) {
+      console.log(`Failed to play with original format ${blob.type}, trying other formats...`);
+      URL.revokeObjectURL(audioPlayerRef.current.src);
+    }
+    
+    // Try with different MIME types
+    for (const format of formatsToTry) {
+      if (blob.type === format.type) continue; // Skip if same as original
+      
+      try {
+        const newBlob = new Blob([blob], { type: format.type });
+        const url = URL.createObjectURL(newBlob);
+        audioPlayerRef.current.src = url;
+        
+        console.log(`Attempting to play audio ${id} with format: ${format.type}`);
+        await audioPlayerRef.current.play();
+        console.log(`Successfully playing audio ${id} with format: ${format.type}`);
+        return true;
+      } catch (err) {
+        console.log(`Failed to play audio ${id} with format: ${format.type}:`, err);
+        URL.revokeObjectURL(audioPlayerRef.current.src);
+      }
+    }
+    
+    console.error(`All playback attempts failed for audio ${id}`);
+    return false;
   }, []);
   
   const playNextInQueue = useCallback(() => {
     if (audioQueueRef.current.length > 0 && !isPlayingRef.current && audioPlayerRef.current) {
       const next = audioQueueRef.current.shift();
       if (next) {
-        console.log("Playing next audio in queue:", next.id);
+        console.log(`Playing next audio in queue: ${next.id} (format: ${next.format})`);
         isPlayingRef.current = true;
         
         try {
-          // Create a new object URL each time to avoid caching issues
-          URL.revokeObjectURL(next.url);
-          const newUrl = URL.createObjectURL(next.blob);
-          
-          audioPlayerRef.current.src = newUrl;
-          
-          audioPlayerRef.current.play()
-            .then(() => {
-              console.log("Audio playback started successfully");
+          // Try to play with format transformation
+          tryPlayAudio(next.blob, next.id)
+            .then(success => {
+              if (!success) {
+                console.error(`Failed to play audio ${next.id} after trying all formats`);
+                isPlayingRef.current = false;
+                // Try next audio after delay
+                setTimeout(playNextInQueue, 100);
+              }
             })
             .catch(error => {
-              console.error("Error playing audio:", error);
+              console.error(`Error in audio playback process for ${next.id}:`, error);
               isPlayingRef.current = false;
-              // Try next audio after delay
               setTimeout(playNextInQueue, 100);
             });
         } catch (err) {
@@ -138,7 +198,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
     }
-  }, []);
+  }, [tryPlayAudio]);
   
   const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     try {
@@ -171,33 +231,35 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       else if (event.data instanceof Blob) {
         const audioSize = event.data.size;
-        const contentType = event.data.type || 'audio/mpeg';
-        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes, type: ${contentType}`);
+        const originalContentType = event.data.type || 'audio/mpeg';
+        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes, type: ${originalContentType}`);
         
-        // Extract Content-Type from the blob if possible, or use a default
-        // Some browsers may handle audio/mpeg better than audio/webm
-        const blobWithType = new Blob([event.data], { type: contentType });
+        // Store the original blob
+        const originalBlob = new Blob([event.data], { type: originalContentType });
+        const audioId = `audio-${Date.now()}`;
+        const audioUrl = URL.createObjectURL(originalBlob);
         
-        const audioUrl = URL.createObjectURL(blobWithType);
-        const responseId = `audio-${Date.now()}`;
-        
+        // Create and add response
         const newResponse: Response = {
-          id: responseId,
-          text: `Audio response received (${audioSize} bytes, format: ${contentType})`,
+          id: audioId,
+          text: `Audio response received (${audioSize} bytes, format: ${originalContentType})`,
           audio_url: audioUrl,
           type: "main",
           timestamp: Date.now(),
+          raw_data: { size: audioSize, type: originalContentType }
         };
         
         setResponses(prev => [...prev, newResponse]);
         
-        // Store the blob in the queue for better memory management
+        // Add audio to play queue
         audioQueueRef.current.push({
           url: audioUrl, 
-          id: responseId,
-          blob: blobWithType
+          id: audioId,
+          blob: originalBlob,
+          format: originalContentType
         });
         
+        // Try playing if not already playing
         if (!isPlayingRef.current) {
           playNextInQueue();
         }
@@ -339,6 +401,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         audioContextRef.current.close();
       }
       
+      // Clean up audio resources
+      clearAudioQueue();
+      
       if (accessToken) {
         try {
           const endpointUrl = ENDPOINTS.END_AUDIO_SESSION(sessionId);
@@ -382,9 +447,31 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Microphone access granted");
       audioStreamRef.current = stream;
       
+      // Try to get the most compatible audio format
+      let mimeType = 'audio/webm;codecs=opus';
+      
+      // Check supported mime types for better compatibility
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+        'audio/ogg'
+      ];
+      
+      for (const type of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          console.log(`Using supported MIME type for recording: ${mimeType}`);
+          break;
+        }
+      }
+      
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
+        mimeType: mimeType
       });
+      
+      console.log(`Created MediaRecorder with MIME type: ${mimeType}`);
       
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];

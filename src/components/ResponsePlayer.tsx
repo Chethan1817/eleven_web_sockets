@@ -16,6 +16,7 @@ const ResponsePlayer: React.FC = () => {
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [audioPlaybackError, setAudioPlaybackError] = useState<string | null>(null);
+  const [audioFormats, setAudioFormats] = useState<Record<string, boolean>>({});
   
   // Auto-scroll to bottom when new responses are added
   useEffect(() => {
@@ -23,6 +24,21 @@ const ResponsePlayer: React.FC = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [responses]);
+  
+  // Detect browser supported audio formats
+  useEffect(() => {
+    const audio = new Audio();
+    const formats = {
+      mp3: audio.canPlayType('audio/mpeg') !== '',
+      wav: audio.canPlayType('audio/wav') !== '',
+      ogg: audio.canPlayType('audio/ogg') !== '',
+      aac: audio.canPlayType('audio/aac') !== '',
+      webm: audio.canPlayType('audio/webm') !== '',
+    };
+    
+    console.log("Browser supported audio formats:", formats);
+    setAudioFormats(formats);
+  }, []);
   
   // Setup the audio element
   useEffect(() => {
@@ -62,7 +78,7 @@ const ResponsePlayer: React.FC = () => {
         src: mediaElement.src
       });
       
-      setAudioPlaybackError(errorMsg);
+      setAudioPlaybackError(`${errorMsg}. The audio format may not be supported by your browser.`);
       setCurrentPlayingId(null);
     });
     
@@ -89,19 +105,19 @@ const ResponsePlayer: React.FC = () => {
     if (!response.audio_url || !audioRef.current) return;
     
     try {
+      // Reset error state before playing
+      setAudioPlaybackError(null);
+      
       // If already playing this response, toggle pause/play
       if (currentPlayingId === response.id) {
         if (audioRef.current.paused) {
-          // Reset error state before playing
-          setAudioPlaybackError(null);
-          
           audioRef.current.play()
             .then(() => {
               console.log(`Resumed playback for response ${response.id}`);
             })
             .catch(error => {
               console.error(`Error resuming audio for response ${response.id}:`, error);
-              setAudioPlaybackError(error.message);
+              setAudioPlaybackError(`Error resuming playback: ${error.message}`);
               setCurrentPlayingId(null);
             });
         } else {
@@ -114,11 +130,13 @@ const ResponsePlayer: React.FC = () => {
           audioRef.current.pause();
         }
         
-        // Reset error state before playing
-        setAudioPlaybackError(null);
-        
         // Play a different response
         console.log(`Starting playback for response ${response.id} with URL:`, response.audio_url);
+        
+        // Show the format in the raw data if available
+        const format = response.raw_data?.type || "unknown format";
+        console.log(`Audio format from response: ${format}`);
+        
         audioRef.current.src = response.audio_url;
         
         audioRef.current.play()
@@ -128,7 +146,7 @@ const ResponsePlayer: React.FC = () => {
           })
           .catch(error => {
             console.error(`Error playing audio for response ${response.id}:`, error);
-            setAudioPlaybackError(error.message);
+            setAudioPlaybackError(`Playback error: ${error.message}. Format: ${format}`);
             setCurrentPlayingId(null);
           });
       }
@@ -192,10 +210,22 @@ const ResponsePlayer: React.FC = () => {
               <Info className="h-4 w-4" />
               <AlertTitle>Audio Playback Issue</AlertTitle>
               <AlertDescription>
-                {audioPlaybackError}. Try a different browser or check your audio format.
+                {audioPlaybackError}. Try a different browser or check your audio settings.
               </AlertDescription>
             </Alert>
           )}
+          
+          {/* Browser supported formats info */}
+          <Alert variant="default" className="mb-4 bg-primary/10">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Audio Format Support</AlertTitle>
+            <AlertDescription className="text-xs">
+              Your browser supports: {Object.entries(audioFormats)
+                .filter(([_, supported]) => supported)
+                .map(([format]) => format.toUpperCase())
+                .join(', ')}
+            </AlertDescription>
+          </Alert>
           
           {responses.map((response) => (
             <div
