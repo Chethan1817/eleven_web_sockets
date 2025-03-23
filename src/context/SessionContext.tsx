@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -145,7 +144,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       if (typeof event.data === 'string') {
         const data = JSON.parse(event.data);
-        console.log("Received text message from WebSocket:", data);
+        console.log("📥 RECEIVED FROM SERVER (text):", data);
         
         if (data.text) {
           const newResponse: Response = {
@@ -172,14 +171,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       else if (event.data instanceof Blob) {
         const audioSize = event.data.size;
-        console.log(`Received binary audio data from WebSocket: ${audioSize} bytes`);
+        const contentType = event.data.type || 'audio/mpeg';
+        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes, type: ${contentType}`);
         
         // Extract Content-Type from the blob if possible, or use a default
         // Some browsers may handle audio/mpeg better than audio/webm
-        const contentType = event.data.type || 'audio/mpeg';
         const blobWithType = new Blob([event.data], { type: contentType });
-        
-        console.log(`Processing audio blob with type: ${contentType}`);
         
         const audioUrl = URL.createObjectURL(blobWithType);
         const responseId = `audio-${Date.now()}`;
@@ -225,6 +222,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Starting new session with API URL:", ENDPOINTS.CREATE_AUDIO_SESSION);
       
       const userId = user?.id ? String(user.id) : "";
+      const requestBody = { 
+        user_id: userId,
+        user_name: user?.name 
+      };
+      
+      console.log("📤 SENDING TO SERVER (create session):", requestBody);
       
       const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
         method: "POST",
@@ -232,10 +235,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           "Content-Type": "application/json",
           "Authorization": `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ 
-          user_id: userId,
-          user_name: user?.name 
-        }),
+        body: JSON.stringify(requestBody),
       });
       
       if (!response.ok) {
@@ -244,7 +244,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       
       const data = await response.json();
-      console.log("Session created response:", data);
+      console.log("📥 RECEIVED FROM SERVER (session creation):", data);
       
       if (!data.session_id) {
         throw new Error("No session ID returned from server");
@@ -258,7 +258,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
-        console.log("WebSocket connection established");
+        console.log("📡 WebSocket connection established");
         setIsSessionActive(true);
         setIsConnecting(false);
         
@@ -283,7 +283,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ws.onmessage = handleWebSocketMessage;
       
       ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
+        console.error("📡 WebSocket error:", error);
         toast({
           title: "Connection Error",
           description: "Error with audio streaming connection.",
@@ -292,7 +292,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
       
       ws.onclose = () => {
-        console.log("WebSocket connection closed");
+        console.log("📡 WebSocket connection closed");
         if (isSessionActive) {
           setIsSessionActive(false);
           
@@ -341,7 +341,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       if (accessToken) {
         try {
-          await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
+          const endpointUrl = ENDPOINTS.END_AUDIO_SESSION(sessionId);
+          console.log("📤 SENDING TO SERVER (end session):", { session_id: sessionId });
+          
+          await fetch(endpointUrl, {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${accessToken}`,
@@ -388,7 +391,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0 && websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-          console.log(`Sending audio chunk of size: ${event.data.size} bytes via WebSocket`);
+          console.log(`📤 SENDING TO SERVER (audio): ${event.data.size} bytes, type: ${event.data.type}`);
           websocketRef.current.send(event.data);
         } else {
           console.log("Cannot send audio:", {
@@ -432,8 +435,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const interruptResponse = useCallback(() => {
     if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-      console.log("Sending interrupt command");
-      websocketRef.current.send(JSON.stringify({ command: "interrupt" }));
+      const interruptCommand = { command: "interrupt" };
+      console.log("📤 SENDING TO SERVER (command):", interruptCommand);
+      websocketRef.current.send(JSON.stringify(interruptCommand));
       
       clearAudioQueue();
     }
