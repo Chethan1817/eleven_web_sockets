@@ -1,5 +1,5 @@
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSession } from "@/context/SessionContext";
@@ -15,11 +15,16 @@ const Index: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const { clearSession, responses } = useSession();
   const [showDebug, setShowDebug] = React.useState(false);
+  const initialLoadRef = useRef(true);
   
   // Clear session data when page loads, but only once
   useEffect(() => {
     // Only clear the session once when the component mounts
-    clearSession();
+    if (initialLoadRef.current) {
+      console.log("Initial page load - clearing session");
+      clearSession();
+      initialLoadRef.current = false;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   

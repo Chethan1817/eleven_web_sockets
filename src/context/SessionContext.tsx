@@ -73,6 +73,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioQueueRef = useRef<{blob: Blob, id: string, format: "mp3" | "pcm" | "auto"}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
+  const sessionActiveRef = useRef<boolean>(false);
   
   const clearAudioQueue = useCallback(() => {
     isPlayingRef.current = false;
@@ -291,6 +292,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [handleWebSocketMessage, toast, isSessionActive, useHttpStreaming, setUseHttpStreaming]);
   
   const stopSession = useCallback(async (): Promise<void> => {
+    if (!sessionActiveRef.current && !isSessionActive) {
+      console.log("No active session to stop");
+      return;
+    }
+    
+    console.log("Stopping session...");
+    sessionActiveRef.current = false;
     setIsSessionActive(false);
     setIsRecording(false);
     setIsProcessing(false);
@@ -357,7 +365,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     
     setSessionId(null);
-  }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming]);
+  }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming, isSessionActive]);
   
   const startSession = useCallback(async (): Promise<void> => {
     if (!user) {
@@ -369,16 +377,23 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
-    await stopSession();
+    if (isSessionActive || sessionActiveRef.current) {
+      console.log("Closing existing session before starting a new one");
+      await stopSession();
+      
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
     
     setIsConnecting(true);
     
     try {
+      console.log("Starting new session...");
       let newSessionId;
       const userIdString = String(user.id);
       
       if (useHttpStreaming) {
-        newSessionId = await createHttpSession(userIdString);
+        newSessionId = await createHttpSession(userIdString, user.name);
+        console.log(`Got new session ID: ${newSessionId}`);
         setSessionId(newSessionId);
         
         const controller = startHttpStreaming(
@@ -404,8 +419,17 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             console.log(`Connection status: ${status} - ${message || ""}`);
             
             if (status === "connected") {
+              console.log("Session connected successfully");
               setIsConnecting(false);
               setIsSessionActive(true);
+              sessionActiveRef.current = true;
+            } else if (status === "disconnected" || status === "error") {
+              console.log(`Session ${status}: ${message}`);
+              if (sessionActiveRef.current) {
+                setIsConnecting(false);
+                setIsSessionActive(false);
+                sessionActiveRef.current = false;
+              }
             }
           }
         );
@@ -442,6 +466,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.error("Failed to start session:", error);
       setIsConnecting(false);
       setIsSessionActive(false);
+      sessionActiveRef.current = false;
       
       toast({
         title: "Session Start Failed",
@@ -449,7 +474,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive"
       });
     }
-  }, [user, accessToken, stopSession, toast, createWebSocketConnection, useHttpStreaming]);
+  }, [user, accessToken, stopSession, toast, createWebSocketConnection, useHttpStreaming, isSessionActive]);
   
   const startRecording = useCallback(async () => {
     if (!isSessionActive) {
@@ -572,6 +597,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       stopSession();
     };
   }, [stopSession]);
+  
+  useEffect(() => {
+    sessionActiveRef.current = isSessionActive;
+  }, [isSessionActive]);
   
   const contextValue: SessionContextType = {
     isSessionActive,

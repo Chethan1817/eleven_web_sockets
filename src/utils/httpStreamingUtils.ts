@@ -1,3 +1,4 @@
+
 /**
  * Utility functions for HTTP streaming audio communication
  */
@@ -73,7 +74,9 @@ export function startHttpStreaming(
   fetch(streamUrl, { 
     signal: controller.signal,
     headers: {
-      "Accept": "text/event-stream,application/octet-stream,application/json"
+      "Accept": "text/event-stream,application/octet-stream,application/json",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive"
     },
     // Important: Prevent the browser from caching the response
     cache: "no-store"
@@ -135,6 +138,7 @@ export function startHttpStreaming(
       } catch (error) {
         if (error.name === 'AbortError') {
           console.log("HTTP stream aborted by user");
+          onConnectionStatus("disconnected", "Connection closed by user");
         } else {
           console.error("Error reading from stream:", error);
           onConnectionStatus("error", `Stream error: ${error.message}`);
