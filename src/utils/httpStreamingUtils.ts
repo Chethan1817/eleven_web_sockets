@@ -70,19 +70,27 @@ export function startHttpStreaming(
   // Inform that we're attempting to connect
   onConnectionStatus("connecting", "Establishing HTTP stream connection");
   
-  fetch(streamUrl, { 
-    signal: controller.signal,
-    headers: {
-      "Accept": "text/event-stream,application/octet-stream"
-    }
-  })
-    .then(response => {
+  // Properly handle the stream with explicit error handling and persistent connection
+  (async () => {
+    try {
+      const response = await fetch(streamUrl, { 
+        signal: controller.signal,
+        headers: {
+          "Accept": "text/event-stream,application/octet-stream,application/json"
+        }
+      });
+      
       if (!response.ok) {
-        throw new Error(`HTTP stream error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`HTTP stream error: ${response.status} ${response.statusText}`, errorText);
+        onConnectionStatus("error", `Connection error: ${response.status} ${response.statusText}`);
+        return;
       }
       
       if (!response.body) {
-        throw new Error("ReadableStream not supported in this browser");
+        console.error("ReadableStream not supported in this browser");
+        onConnectionStatus("error", "Your browser doesn't support streaming");
+        return;
       }
       
       onConnectionStatus("connected", "HTTP stream connected");
@@ -94,60 +102,64 @@ export function startHttpStreaming(
       let buffer = '';
       
       // This function reads chunks from the stream and processes them
-      function processStream({ done, value }: ReadableStreamReadResult<Uint8Array>): Promise<void> {
-        // If the stream is done, handle completion
-        if (done) {
-          console.log("Stream complete");
-          onConnectionStatus("disconnected", "Stream ended");
-          return Promise.resolve();
-        }
-        
+      async function processStreamChunks() {
         try {
-          // Decode chunk and add to buffer
-          const chunk = decoder.decode(value, { stream: true });
-          console.log(`Received chunk: ${chunk.length} bytes`);
-          buffer += chunk;
-          
-          // Process complete messages
-          const { processed, remainder } = processBuffer(buffer);
-          buffer = remainder;
-          
-          // Handle each message
-          processed.forEach(message => {
-            handleStreamMessage(
-              message, 
-              onTranscript, 
-              onResponse, 
-              onConnectionStatus
-            );
-          });
-          
-          // Continue reading (this keeps the connection alive)
-          return reader.read().then(processStream);
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            // If the stream is done, handle completion
+            if (done) {
+              console.log("Stream complete");
+              onConnectionStatus("disconnected", "Stream ended");
+              break;
+            }
+            
+            // Process the received chunk
+            const chunk = decoder.decode(value, { stream: true });
+            console.log(`Received chunk: ${chunk.length} bytes`);
+            buffer += chunk;
+            
+            // Process complete messages
+            const { processed, remainder } = processBuffer(buffer);
+            buffer = remainder;
+            
+            // Handle each message
+            processed.forEach(message => {
+              handleStreamMessage(
+                message, 
+                onTranscript, 
+                onResponse, 
+                onConnectionStatus
+              );
+            });
+          }
         } catch (error) {
-          console.error("Error processing stream chunk:", error);
-          onConnectionStatus("error", `Stream processing error: ${error instanceof Error ? error.message : String(error)}`);
-          return Promise.reject(error);
+          // Only report error if it's not an AbortError (which is expected during cleanup)
+          if (error instanceof Error && error.name !== 'AbortError') {
+            console.error("Error reading from stream:", error);
+            onConnectionStatus("error", `Stream error: ${error.message}`);
+          }
         }
       }
       
-      // Start reading the stream - this is crucial to keep the connection alive
-      reader.read().then(processStream).catch(error => {
+      // Start processing the stream
+      processStreamChunks().catch(error => {
         if (error.name !== 'AbortError') {
-          console.error("Stream reading error:", error);
-          onConnectionStatus("error", `Stream reading error: ${error.message}`);
+          console.error("Stream processing failed:", error);
+          onConnectionStatus("error", `Stream processing error: ${error.message}`);
         }
       });
-    })
-    .catch(error => {
-      if (error.name === 'AbortError') {
-        console.log("HTTP stream aborted");
+      
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log("HTTP stream aborted by user");
       } else {
-        console.error("HTTP stream error:", error);
-        onConnectionStatus("error", error.message);
+        console.error("HTTP stream connection error:", error);
+        onConnectionStatus("error", `Connection error: ${error instanceof Error ? error.message : String(error)}`);
       }
-    });
-    
+    }
+  })();
+  
   return controller;
 }
 
