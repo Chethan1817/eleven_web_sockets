@@ -14,31 +14,28 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-// Reorganize routes to ensure SessionProvider is available for routes that need it
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <Toaster />
-          <Sonner />
-          <Routes>
-            {/* Auth-only routes not requiring SessionProvider */}
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/verify-otp" element={<OtpVerification />} />
-            
-            {/* Routes that require SessionProvider */}
-            <Route path="/" element={
-              <SessionProvider>
-                <Index />
-              </SessionProvider>
-            } />
-            
-            {/* Catch-all route */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <SessionProvider>
+          <BrowserRouter>
+            <Toaster />
+            <Sonner />
+            <Routes>
+              {/* Auth-only routes */}
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/verify-otp" element={<OtpVerification />} />
+              
+              {/* Home route */}
+              <Route path="/" element={<Index />} />
+              
+              {/* Catch-all route */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </SessionProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
