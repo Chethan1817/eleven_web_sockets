@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for HTTP streaming audio communication
  */
@@ -68,6 +67,9 @@ export function startHttpStreaming(
   
   console.log("Connecting to stream URL:", streamUrl);
   
+  // Inform that we're attempting to connect
+  onConnectionStatus("connecting", "Establishing HTTP stream connection");
+  
   fetch(streamUrl, { 
     signal: controller.signal,
     headers: {
@@ -86,40 +88,56 @@ export function startHttpStreaming(
       onConnectionStatus("connected", "HTTP stream connected");
       console.log("HTTP stream connected successfully");
       
+      // Get a reader to actively consume the stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       
-      function processStream({ done, value }: ReadableStreamReadResult<Uint8Array>) {
+      // This function reads chunks from the stream and processes them
+      function processStream({ done, value }: ReadableStreamReadResult<Uint8Array>): Promise<void> {
+        // If the stream is done, handle completion
         if (done) {
           console.log("Stream complete");
           onConnectionStatus("disconnected", "Stream ended");
-          return;
+          return Promise.resolve();
         }
         
-        // Decode chunk and add to buffer
-        buffer += decoder.decode(value, { stream: true });
-        
-        // Process complete messages
-        const { processed, remainder } = processBuffer(buffer);
-        buffer = remainder;
-        
-        // Handle each message
-        processed.forEach(message => {
-          handleStreamMessage(
-            message, 
-            onTranscript, 
-            onResponse, 
-            onConnectionStatus
-          );
-        });
-        
-        // Continue reading
-        reader.read().then(processStream);
+        try {
+          // Decode chunk and add to buffer
+          const chunk = decoder.decode(value, { stream: true });
+          console.log(`Received chunk: ${chunk.length} bytes`);
+          buffer += chunk;
+          
+          // Process complete messages
+          const { processed, remainder } = processBuffer(buffer);
+          buffer = remainder;
+          
+          // Handle each message
+          processed.forEach(message => {
+            handleStreamMessage(
+              message, 
+              onTranscript, 
+              onResponse, 
+              onConnectionStatus
+            );
+          });
+          
+          // Continue reading (this keeps the connection alive)
+          return reader.read().then(processStream);
+        } catch (error) {
+          console.error("Error processing stream chunk:", error);
+          onConnectionStatus("error", `Stream processing error: ${error instanceof Error ? error.message : String(error)}`);
+          return Promise.reject(error);
+        }
       }
       
-      // Start reading the stream
-      reader.read().then(processStream);
+      // Start reading the stream - this is crucial to keep the connection alive
+      reader.read().then(processStream).catch(error => {
+        if (error.name !== 'AbortError') {
+          console.error("Stream reading error:", error);
+          onConnectionStatus("error", `Stream reading error: ${error.message}`);
+        }
+      });
     })
     .catch(error => {
       if (error.name === 'AbortError') {
