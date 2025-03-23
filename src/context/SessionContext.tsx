@@ -75,6 +75,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const isPlayingRef = useRef<boolean>(false);
   const sessionActiveRef = useRef<boolean>(false);
   const isManuallyStoppingRef = useRef<boolean>(false);
+  const skipUnmountCleanupRef = useRef<boolean>(false);
   
   const clearAudioQueue = useCallback(() => {
     isPlayingRef.current = false;
@@ -397,6 +398,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     isManuallyStoppingRef.current = false;
     
+    skipUnmountCleanupRef.current = true;
+    
     setIsConnecting(true);
     sessionActiveRef.current = true;
     
@@ -440,13 +443,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               setIsSessionActive(true);
               sessionActiveRef.current = true;
               
+              skipUnmountCleanupRef.current = false;
+              
               toast({
                 title: "Connection Established",
                 description: "HTTP streaming connection is active.",
                 variant: "default"
               });
               
-              // IMPORTANT: Mark session as active immediately after setup
               setIsSessionActive(true);
             } else if (status === "disconnected" || status === "error") {
               console.log(`Session ${status}: ${message}`);
@@ -467,10 +471,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         
         streamControllerRef.current = controller;
         
+        setIsSessionActive(true);
+        
         console.log("HTTP streaming setup complete, context state:", {
           sessionId: newSessionId,
           isConnecting: true,
-          isSessionActive: sessionActiveRef.current,
+          isSessionActive: true,
           hasStreamController: !!controller
         });
       } else {
@@ -624,6 +630,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [clearAudioQueue]);
   
+  const initialMountRef = useRef(true);
+  
   useEffect(() => {
     const initialSync = () => {
       sessionActiveRef.current = isSessionActive;
@@ -631,17 +639,26 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     
     initialSync();
+    
+    return () => {
+      initialMountRef.current = false;
+    };
   }, []);
   
   useEffect(() => {
     return () => {
-      if (!isManuallyStoppingRef.current) {
-        console.log("Component unmounting, stopping session if not manual:", { 
-          isManuallyStoppingRef: isManuallyStoppingRef.current
-        });
+      const shouldSkip = skipUnmountCleanupRef.current || isManuallyStoppingRef.current;
+      console.log(`Component unmounting, cleanup conditions:`, { 
+        skipUnmountCleanup: skipUnmountCleanupRef.current,
+        isManuallyStoppingRef: isManuallyStoppingRef.current,
+        willSkipCleanup: shouldSkip
+      });
+      
+      if (!shouldSkip) {
+        console.log("Component unmounting, stopping session");
         stopSession();
       } else {
-        console.log("Component unmounting, manual stop in progress - not calling stopSession again");
+        console.log("Component unmounting, but skipping cleanup due to flags");
       }
     };
   }, [stopSession]);
@@ -679,7 +696,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isConnecting,
     hasStreamController: !!streamControllerRef.current,
     sessionId,
-    manuallyStoppingRef: isManuallyStoppingRef.current
+    manuallyStoppingRef: isManuallyStoppingRef.current,
+    skipUnmountCleanup: skipUnmountCleanupRef.current
   });
   
   return (
