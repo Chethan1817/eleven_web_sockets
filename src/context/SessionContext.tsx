@@ -1,9 +1,8 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS } from "@/config";
-import { detectAudioFormat, createAudioVariants } from "@/utils/audioUtils";
+import { playAudio } from "@/utils/audioUtils";
 
 interface Transcript {
   id: string;
@@ -60,169 +59,47 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const audioQueueRef = useRef<{url: string, id: string, blob: Blob, format: string}[]>([]);
+  const audioQueueRef = useRef<{blob: Blob, id: string}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   
-  // Create audio player on component mount
-  useEffect(() => {
-    const audioPlayer = new Audio();
-    
-    audioPlayer.addEventListener('ended', () => {
-      console.log("Audio playback ended");
-      isPlayingRef.current = false;
-      playNextInQueue();
-    });
-    
-    audioPlayer.addEventListener('error', (e) => {
-      // Log the full error details
-      const target = e.target as HTMLAudioElement;
-      const errorCode = target.error ? target.error.code : 'unknown';
-      const errorMessage = target.error ? target.error.message : 'unknown';
-      
-      console.error("Audio player error:", {
-        event: e,
-        errorCode,
-        errorMessage,
-        currentSrc: target.currentSrc
-      });
-      
-      isPlayingRef.current = false;
-      playNextInQueue();
-    });
-    
-    audioPlayerRef.current = audioPlayer;
-    
-    return () => {
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.src = '';
-      }
-    };
-  }, []);
-  
-  // Function to clear the audio queue and stop current playback
   const clearAudioQueue = useCallback(() => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.src = '';
-    }
-    
-    // Clean up blob URLs to avoid memory leaks
-    audioQueueRef.current.forEach(item => {
-      try {
-        URL.revokeObjectURL(item.url);
-      } catch (err) {
-        console.error("Error revoking URL:", err);
-      }
-    });
-    
     isPlayingRef.current = false;
     audioQueueRef.current = [];
   }, []);
   
-  // Try to play audio with different formats if one fails
-  const tryPlayAudio = useCallback(async (blob: Blob, id: string): Promise<boolean> => {
-    if (!audioPlayerRef.current) return false;
-    
-    try {
-      // First, try to detect the actual format from the binary data
-      const detectedFormat = await detectAudioFormat(blob);
-      console.log(`Detected format for audio ${id}: ${detectedFormat}`);
-      
-      // First try with the detected format
-      try {
-        const detectedBlob = new Blob([blob], { type: detectedFormat });
-        const url = URL.createObjectURL(detectedBlob);
-        audioPlayerRef.current.src = url;
-        
-        console.log(`Attempting to play audio ${id} with detected format: ${detectedFormat}`);
-        await audioPlayerRef.current.play();
-        console.log(`Successfully playing audio ${id} with detected format: ${detectedFormat}`);
-        return true;
-      } catch (err) {
-        console.log(`Failed to play with detected format ${detectedFormat}, trying other formats...`);
-        URL.revokeObjectURL(audioPlayerRef.current.src);
-      }
-      
-      // If detected format fails, try with the original blob
-      try {
-        const originalUrl = URL.createObjectURL(blob);
-        audioPlayerRef.current.src = originalUrl;
-        await audioPlayerRef.current.play();
-        console.log(`Successfully playing audio ${id} with original format: ${blob.type}`);
-        return true;
-      } catch (err) {
-        console.log(`Failed to play with original format ${blob.type}, trying other formats...`);
-        URL.revokeObjectURL(audioPlayerRef.current.src);
-      }
-      
-      // Try with different MIME types
-      const formatsToTry = [
-        { type: 'audio/mpeg', ext: 'mp3' },
-        { type: 'audio/wav', ext: 'wav' },
-        { type: 'audio/webm', ext: 'webm' },
-        { type: 'audio/aac', ext: 'aac' },
-        { type: 'audio/ogg', ext: 'ogg' },
-      ];
-      
-      for (const format of formatsToTry) {
-        if (blob.type === format.type || detectedFormat === format.type) continue; // Skip if same as already tried
-        
-        try {
-          const newBlob = new Blob([blob], { type: format.type });
-          const url = URL.createObjectURL(newBlob);
-          audioPlayerRef.current.src = url;
-          
-          console.log(`Attempting to play audio ${id} with format: ${format.type}`);
-          await audioPlayerRef.current.play();
-          console.log(`Successfully playing audio ${id} with format: ${format.type}`);
-          return true;
-        } catch (err) {
-          console.log(`Failed to play audio ${id} with format: ${format.type}:`, err);
-          URL.revokeObjectURL(audioPlayerRef.current.src);
-        }
-      }
-      
-      console.error(`All playback attempts failed for audio ${id}`);
-      return false;
-    } catch (err) {
-      console.error(`Exception in tryPlayAudio for ${id}:`, err);
-      return false;
-    }
-  }, []);
-  
-  const playNextInQueue = useCallback(() => {
-    if (audioQueueRef.current.length > 0 && !isPlayingRef.current && audioPlayerRef.current) {
+  const playNextInQueue = useCallback(async () => {
+    if (audioQueueRef.current.length > 0 && !isPlayingRef.current) {
       const next = audioQueueRef.current.shift();
       if (next) {
-        console.log(`Playing next audio in queue: ${next.id} (format: ${next.format})`);
+        console.log(`Playing next PCM audio in queue: ${next.id}`);
         isPlayingRef.current = true;
         
         try {
-          // Try to play with format transformation
-          tryPlayAudio(next.blob, next.id)
-            .then(success => {
-              if (!success) {
-                console.error(`Failed to play audio ${next.id} after trying all formats`);
-                isPlayingRef.current = false;
-                // Try next audio after delay
-                setTimeout(playNextInQueue, 100);
-              }
-            })
-            .catch(error => {
-              console.error(`Error in audio playback process for ${next.id}:`, error);
+          const success = await playAudio(next.blob, next.id, {
+            sampleRate: 16000,
+            channels: 1
+          });
+          
+          if (success) {
+            const durationMs = (next.blob.size / 32) + 500; // Add buffer
+            
+            setTimeout(() => {
               isPlayingRef.current = false;
-              setTimeout(playNextInQueue, 100);
-            });
+              playNextInQueue();
+            }, durationMs);
+          } else {
+            console.error(`Failed to play PCM audio ${next.id}`);
+            isPlayingRef.current = false;
+            setTimeout(playNextInQueue, 100); // Try next audio after delay
+          }
         } catch (err) {
-          console.error("Exception in audio playback:", err);
+          console.error("Exception in PCM audio playback:", err);
           isPlayingRef.current = false;
           setTimeout(playNextInQueue, 100);
         }
       }
     }
-  }, [tryPlayAudio]);
+  }, []);
   
   const handleWebSocketMessage = useCallback(async (event: MessageEvent) => {
     try {
@@ -255,43 +132,33 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       else if (event.data instanceof Blob) {
         const audioSize = event.data.size;
-        const originalContentType = event.data.type || 'audio/mpeg';
-        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes, type: ${originalContentType}`);
+        console.log(`📥 RECEIVED FROM SERVER (binary): ${audioSize} bytes of PCM audio`);
         
-        // Detect the actual audio format from the binary data
-        const detectedFormat = await detectAudioFormat(event.data);
-        console.log(`Detected audio format from binary data: ${detectedFormat}`);
-        
-        // Store the original blob with detected format
-        const originalBlob = new Blob([event.data], { type: detectedFormat });
+        const pcmBlob = new Blob([event.data], { type: 'audio/pcm' });
         const audioId = `audio-${Date.now()}`;
-        const audioUrl = URL.createObjectURL(originalBlob);
         
-        // Create and add response
+        const placeholderUrl = URL.createObjectURL(pcmBlob);
+        
         const newResponse: Response = {
           id: audioId,
-          text: `Audio response received (${audioSize} bytes, detected format: ${detectedFormat})`,
-          audio_url: audioUrl,
+          text: `Audio response received (${audioSize} bytes, PCM format)`,
+          audio_url: placeholderUrl,
           type: "main",
           timestamp: Date.now(),
           raw_data: { 
             size: audioSize, 
-            type: originalContentType, 
-            detectedType: detectedFormat 
+            type: 'audio/pcm',
+            format: 'PCM' 
           }
         };
         
         setResponses(prev => [...prev, newResponse]);
         
-        // Add audio to play queue
         audioQueueRef.current.push({
-          url: audioUrl, 
-          id: audioId,
-          blob: originalBlob,
-          format: detectedFormat
+          blob: pcmBlob, 
+          id: audioId
         });
         
-        // Try playing if not already playing
         if (!isPlayingRef.current) {
           playNextInQueue();
         }
@@ -433,7 +300,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         audioContextRef.current.close();
       }
       
-      // Clean up audio resources
       clearAudioQueue();
       
       if (accessToken) {
@@ -479,10 +345,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Microphone access granted");
       audioStreamRef.current = stream;
       
-      // Try to get the most compatible audio format
       let mimeType = 'audio/webm;codecs=opus';
       
-      // Check supported mime types for better compatibility
       const mimeTypes = [
         'audio/webm;codecs=opus',
         'audio/webm',

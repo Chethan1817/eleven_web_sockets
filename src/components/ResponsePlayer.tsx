@@ -7,12 +7,11 @@ import { Volume2, VolumeX, PlayCircle, Code, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { detectBrowserAudioSupport } from "@/utils/audioUtils";
+import { detectBrowserAudioSupport, playAudio } from "@/utils/audioUtils";
 
 const ResponsePlayer: React.FC = () => {
   const { responses, isSessionActive } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
@@ -33,118 +32,39 @@ const ResponsePlayer: React.FC = () => {
     setAudioFormats(supportedFormats);
   }, []);
   
-  // Setup the audio element
-  useEffect(() => {
-    const audio = new Audio();
-    
-    audio.addEventListener('ended', () => {
-      console.log("Audio playback ended in ResponsePlayer");
-      setCurrentPlayingId(null);
-    });
-    
-    audio.addEventListener('error', (e) => {
-      // Use proper type casting for the event target
-      const mediaElement = e.target as HTMLMediaElement;
-      const error = mediaElement.error;
-      let errorMsg = "Unknown audio error";
-      
-      if (error) {
-        switch (error.code) {
-          case MediaError.MEDIA_ERR_ABORTED:
-            errorMsg = "Audio playback aborted";
-            break;
-          case MediaError.MEDIA_ERR_NETWORK:
-            errorMsg = "Network error during audio playback";
-            break;
-          case MediaError.MEDIA_ERR_DECODE:
-            errorMsg = "Audio decoding error";
-            break;
-          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-            errorMsg = "Audio format not supported";
-            break;
-        }
-      }
-      
-      console.error("Audio playback error in ResponsePlayer:", {
-        error: errorMsg,
-        mediaError: error,
-        src: mediaElement.src,
-        currentSrc: mediaElement.currentSrc
-      });
-      
-      setAudioPlaybackError(`${errorMsg}. The audio format may not be supported by your browser.`);
-      setCurrentPlayingId(null);
-    });
-    
-    audioRef.current = audio;
-    
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-        audioRef.current.removeEventListener('ended', () => {});
-        audioRef.current.removeEventListener('error', () => {});
-      }
-    };
-  }, []);
-  
-  // Update muted state on the audio element
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = muted;
-    }
-  }, [muted]);
-  
-  const playAudio = (response: typeof responses[0]) => {
-    if (!response.audio_url || !audioRef.current) return;
+  const playResponseAudio = async (response: typeof responses[0]) => {
+    if (!response.audio_url) return;
     
     try {
       // Reset error state before playing
       setAudioPlaybackError(null);
       
-      // If already playing this response, toggle pause/play
+      // If already playing this response, stop it
       if (currentPlayingId === response.id) {
-        if (audioRef.current.paused) {
-          audioRef.current.play()
-            .then(() => {
-              console.log(`Resumed playback for response ${response.id}`);
-            })
-            .catch(error => {
-              console.error(`Error resuming audio for response ${response.id}:`, error);
-              setAudioPlaybackError(`Error resuming playback: ${error.message}`);
-              setCurrentPlayingId(null);
-            });
-        } else {
-          audioRef.current.pause();
+        setCurrentPlayingId(null);
+        return;
+      }
+      
+      // Fetch the audio blob
+      const audioResponse = await fetch(response.audio_url);
+      const audioBlob = await audioResponse.blob();
+      
+      // Play audio as PCM
+      console.log(`Playing response ${response.id} as PCM audio`);
+      const success = await playAudio(audioBlob, response.id, {
+        sampleRate: 16000,  // Adjust based on your actual PCM format
+        channels: 1
+      });
+      
+      if (success) {
+        setCurrentPlayingId(response.id);
+        
+        // Auto-reset playing state after a timeout (PCM playback doesn't have events)
+        setTimeout(() => {
           setCurrentPlayingId(null);
-        }
+        }, (audioBlob.size / 32) + 1000); // Rough estimate: 16-bit PCM at 16kHz is 32 bytes per ms
       } else {
-        // Stop any existing playback
-        if (audioRef.current.src) {
-          audioRef.current.pause();
-        }
-        
-        // Play a different response
-        console.log(`Starting playback for response ${response.id} with URL:`, response.audio_url);
-        
-        // Get the format from raw data if available
-        const detectedFormat = response.raw_data?.detectedType || response.raw_data?.type || "unknown format";
-        console.log(`Audio format from response: ${detectedFormat}`);
-        
-        audioRef.current.src = response.audio_url;
-        
-        audioRef.current.play()
-          .then(() => {
-            setCurrentPlayingId(response.id);
-            console.log(`Successfully started playback for response ${response.id}`);
-          })
-          .catch(error => {
-            console.error(`Error playing audio for response ${response.id}:`, error);
-            setAudioPlaybackError(`Playback error: ${error.message}. Format: ${detectedFormat}`);
-            setCurrentPlayingId(null);
-            
-            // Could try alternative formats here if needed
-          });
+        setAudioPlaybackError("Failed to play audio. The format may not be supported.");
       }
     } catch (err) {
       console.error("Exception during audio playback setup:", err);
@@ -154,6 +74,8 @@ const ResponsePlayer: React.FC = () => {
   
   const toggleMute = () => {
     setMuted(!muted);
+    // In the PCM-only scenario, we would need to implement volume control
+    // directly in the audioUtils.playPCMAudio function
   };
   
   // Display empty state for inactive session
@@ -206,7 +128,7 @@ const ResponsePlayer: React.FC = () => {
               <Info className="h-4 w-4" />
               <AlertTitle>Audio Playback Issue</AlertTitle>
               <AlertDescription>
-                {audioPlaybackError}. Try a different browser or check your audio settings.
+                {audioPlaybackError}. The application is configured to play PCM audio only.
               </AlertDescription>
             </Alert>
           )}
@@ -214,12 +136,9 @@ const ResponsePlayer: React.FC = () => {
           {/* Browser supported formats info */}
           <Alert variant="default" className="mb-4 bg-primary/10">
             <Info className="h-4 w-4" />
-            <AlertTitle>Audio Format Support</AlertTitle>
+            <AlertTitle>Audio Information</AlertTitle>
             <AlertDescription className="text-xs">
-              Your browser supports: {Object.entries(audioFormats)
-                .filter(([_, supported]) => supported)
-                .map(([format]) => format.toUpperCase())
-                .join(', ')}
+              Using Web Audio API for PCM playback. Sample rate: 16kHz, 16-bit.
             </AlertDescription>
           </Alert>
           
@@ -252,7 +171,7 @@ const ResponsePlayer: React.FC = () => {
                       "h-8 w-8 p-0 rounded-full",
                       currentPlayingId === response.id && "text-primary"
                     )}
-                    onClick={() => playAudio(response)}
+                    onClick={() => playResponseAudio(response)}
                   >
                     <PlayCircle size={18} />
                   </Button>
@@ -288,8 +207,6 @@ const ResponsePlayer: React.FC = () => {
           ))}
         </div>
       </ScrollArea>
-      
-      <audio ref={audioRef} className="hidden" />
     </div>
   );
 };
