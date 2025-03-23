@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useRef, useCallback } from "react";
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
 import { ENDPOINTS } from "@/config";
@@ -50,11 +50,72 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
   const [greeting, setGreeting] = useState<string | null>(null);
+  const [receiveUrl, setReceiveUrl] = useState<string | null>(null);
   
   const websocketRef = useRef<WebSocket | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  
+  // Setup audio streaming from server
+  useEffect(() => {
+    if (receiveUrl && isSessionActive) {
+      console.log("Setting up EventSource for audio responses at:", receiveUrl);
+      
+      // Create an EventSource to handle server-sent events for audio responses
+      const eventSource = new EventSource(receiveUrl);
+      
+      eventSource.onopen = () => {
+        console.log("EventSource connection opened");
+      };
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log("Received message from server:", data);
+          
+          if (data.text) {
+            // Create a new response object
+            const newResponse: Response = {
+              id: `resp-${Date.now()}`,
+              text: data.text,
+              audio_url: data.audio_url,
+              type: data.type || "main",
+              timestamp: Date.now(),
+            };
+            
+            setResponses(prev => [...prev, newResponse]);
+          }
+          
+          if (data.transcript) {
+            // Create a new transcript object
+            const newTranscript: Transcript = {
+              id: `trans-${Date.now()}`,
+              text: data.transcript,
+              is_final: data.is_final || false,
+              timestamp: Date.now(),
+            };
+            
+            setTranscripts(prev => [...prev, newTranscript]);
+          }
+        } catch (error) {
+          console.error("Error processing server message:", error);
+        }
+      };
+      
+      eventSource.onerror = (error) => {
+        console.error("EventSource error:", error);
+      };
+      
+      // Clean up EventSource on component unmount or when session ends
+      return () => {
+        console.log("Closing EventSource connection");
+        eventSource.close();
+      };
+    }
+  }, [receiveUrl, isSessionActive]);
   
   const startSession = async () => {
     if (!accessToken) {
@@ -90,8 +151,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Session created response:", data);
       setSessionId(data.session_id);
       
-      // Setup audio stream for receiving responses
-      setupAudioReceiveStream(data.receive_url);
+      // Store the receive URL for streaming audio responses
+      if (data.receive_url) {
+        setReceiveUrl(data.receive_url);
+        console.log("Receive URL set:", data.receive_url);
+      } else {
+        console.error("No receive_url in response:", data);
+      }
       
       setIsSessionActive(true);
       setIsConnecting(false);
@@ -126,19 +192,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
   
-  const setupAudioReceiveStream = (receiveUrl: string) => {
-    try {
-      // For now, we'll just log that we've set up the receive stream
-      // In a real implementation, you would connect to the audio stream
-      console.log("Setting up audio receive stream from URL:", receiveUrl);
-      
-      // Simulate receiving audio - this would be replaced with real implementation
-      // that connects to the streaming endpoint
-    } catch (error) {
-      console.error("Error setting up audio receive stream:", error);
-    }
-  };
-  
   const stopSession = async () => {
     if (!sessionId || !accessToken) return;
     
@@ -158,6 +211,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         websocketRef.current = null;
       }
       
+      // Close audio context
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
+      
       await fetch(ENDPOINTS.END_AUDIO_SESSION(sessionId), {
         method: "POST",
         headers: {
@@ -166,6 +224,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       
       setIsSessionActive(false);
+      setReceiveUrl(null);
+      
       toast({
         title: "Session Ended",
         description: "Audio streaming session has been terminated.",
@@ -205,13 +265,17 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             formData.append('audio', event.data);
             formData.append('session_id', sessionId);
             
-            await fetch(ENDPOINTS.SEND_AUDIO_CHUNK, {
+            const response = await fetch(ENDPOINTS.SEND_AUDIO_CHUNK, {
               method: 'POST',
               headers: {
                 "Authorization": `Bearer ${accessToken}`,
               },
               body: formData
             });
+            
+            if (!response.ok) {
+              throw new Error(`Error sending audio chunk: ${response.status}`);
+            }
             
             console.log("Audio chunk sent, size:", event.data.size);
           } catch (error) {
@@ -260,7 +324,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (greeting !== null) {
       setGreeting(null);
     }
-  }, [transcripts.length, responses.length, sessionId, greeting]);
+    if (receiveUrl !== null) {
+      setReceiveUrl(null);
+    }
+  }, [transcripts.length, responses.length, sessionId, greeting, receiveUrl]);
   
   return (
     <SessionContext.Provider

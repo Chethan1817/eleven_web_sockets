@@ -84,7 +84,7 @@ const AudioRecorder: React.FC = () => {
             {audioLevel.map((level, index) => (
               <div 
                 key={index}
-                className="audio-bar"
+                className="audio-bar bg-primary/80 w-2 rounded-t-sm mx-px transition-all duration-100"
                 style={{ 
                   '--index': index,
                   height: `${level}px` 
