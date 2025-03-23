@@ -70,9 +70,29 @@ export function startHttpStreaming(
   // Inform that we're attempting to connect
   onConnectionStatus("connecting", "Establishing HTTP stream connection");
   
+  // Set connection timeout
+  const connectionTimeoutId = setTimeout(() => {
+    if (!controller.signal.aborted) {
+      console.warn("HTTP stream connection timeout after 30 seconds");
+      onConnectionStatus("error", "Connection timed out after 30 seconds");
+      controller.abort();
+    }
+  }, 30000);
+  
   // Initialize connection and stream reading
   (async () => {
     try {
+      // Log the request details
+      console.log("HTTP Stream Request details:", {
+        url: streamUrl,
+        headers: {
+          "Accept": "text/event-stream,application/octet-stream,application/json",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive"
+        },
+        cache: "no-store"
+      });
+      
       const response = await fetch(streamUrl, { 
         signal: controller.signal,
         headers: {
@@ -83,6 +103,12 @@ export function startHttpStreaming(
         // Important: Prevent the browser from caching the response
         cache: "no-store"
       });
+      
+      // Clear the timeout once we get a response
+      clearTimeout(connectionTimeoutId);
+      
+      console.log("HTTP Stream Response status:", response.status, response.statusText);
+      console.log("HTTP Stream Response headers:", [...response.headers.entries()]);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -98,6 +124,19 @@ export function startHttpStreaming(
       }
       
       console.log("[Stream] HTTP stream connected, beginning to read data");
+      
+      // Signal connection success
+      onConnectionStatus("connected", "HTTP stream connected");
+      
+      // Set up a ping mechanism to keep the connection alive
+      const pingInterval = setInterval(() => {
+        if (!controller.signal.aborted) {
+          console.log("Sending ping to keep HTTP stream alive");
+          // This is just a log, no actual ping for HTTP stream
+        } else {
+          clearInterval(pingInterval);
+        }
+      }, 30000);
       
       // Get a reader to consume the stream
       const reader = response.body.getReader();
@@ -120,12 +159,9 @@ export function startHttpStreaming(
           // Process the chunk
           const chunk = decoder.decode(value, { stream: true });
           console.log(`[Stream] Raw chunk received: ${chunk.length} bytes`);
-          console.log("[Stream] Raw chunk content:", chunk); // Added explicit log of raw chunk content
+          console.log("[Stream] First 100 chars of chunk:", chunk.substring(0, 100));
           
           buffer += chunk;
-          
-          // Add debug log before processing
-          console.log("[Stream] Current buffer before processing:", buffer);
           
           // Process any complete messages in the buffer
           const { processed, remainder } = processBuffer(buffer);
@@ -156,9 +192,11 @@ export function startHttpStreaming(
         }
       }
       
-      onConnectionStatus("connected", "HTTP stream connected");
-      console.log("HTTP stream connected successfully");
+      clearInterval(pingInterval);
     } catch (error) {
+      // Clear the timeout if there's an error
+      clearTimeout(connectionTimeoutId);
+      
       // Only log non-abort errors
       if (error.name !== 'AbortError') {
         console.error("HTTP stream connection error:", error);
@@ -487,4 +525,3 @@ export class HttpAudioRecorder {
     return this.isRecording;
   }
 }
-

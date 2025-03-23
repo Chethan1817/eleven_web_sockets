@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
@@ -31,6 +30,15 @@ const AudioRecorder: React.FC = () => {
   const [isAudioDetected, setIsAudioDetected] = useState(false);
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
   const [checkingMic, setCheckingMic] = useState(false);
+  const [connectionAttemptTime, setConnectionAttemptTime] = useState<number | null>(null);
+  
+  useEffect(() => {
+    if (isConnecting && !connectionAttemptTime) {
+      setConnectionAttemptTime(Date.now());
+    } else if (!isConnecting) {
+      setConnectionAttemptTime(null);
+    }
+  }, [isConnecting, connectionAttemptTime]);
   
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -95,7 +103,10 @@ const AudioRecorder: React.FC = () => {
     } else if (micPermission === false) {
       setDisabledReason("Microphone access is denied");
     } else if (isConnecting) {
-      setDisabledReason("Connecting to server...");
+      const timeElapsed = connectionAttemptTime ? Math.floor((Date.now() - connectionAttemptTime) / 1000) : 0;
+      setDisabledReason(timeElapsed > 5 
+        ? `Still connecting... (${timeElapsed}s)` 
+        : "Connecting to server...");
     } else if (!isSessionActive) {
       setDisabledReason(null); // Button is enabled to start session
     } else {
@@ -108,13 +119,16 @@ const AudioRecorder: React.FC = () => {
       micPermission,
       checkingMic,
       disabledReason,
+      connectionAttemptTime,
+      timeElapsed: connectionAttemptTime ? Math.floor((Date.now() - connectionAttemptTime) / 1000) : 0,
       isDisabled: micPermission === false || isConnecting || checkingMic
     });
-  }, [isSessionActive, isConnecting, micPermission, checkingMic]);
+  }, [isSessionActive, isConnecting, micPermission, checkingMic, connectionAttemptTime]);
   
   const handleTalkButtonClick = () => {
     if (!isSessionActive) {
       console.log("Starting new session");
+      setConnectionAttemptTime(Date.now());
       startSession();
     } else if (isRecording) {
       console.log("Stopping recording");
@@ -281,7 +295,9 @@ const AudioRecorder: React.FC = () => {
       
       <div className="text-xs text-muted-foreground">
         {!isSessionActive ? (
-          isConnecting ? `Connecting... (${useHttpStreaming ? 'HTTP' : 'WebSocket'})` : `Start a new session to begin (${useHttpStreaming ? 'HTTP' : 'WebSocket'} mode)`
+          isConnecting ? 
+            `Connecting${connectionAttemptTime ? ` (${Math.floor((Date.now() - connectionAttemptTime) / 1000)}s)` : ''}... (${useHttpStreaming ? 'HTTP' : 'WebSocket'})` 
+            : `Start a new session to begin (${useHttpStreaming ? 'HTTP' : 'WebSocket'} mode)`
         ) : (
           isRecording ? (
             isAudioDetected ? "Audio detected and sending..." : "Waiting for audio..."
