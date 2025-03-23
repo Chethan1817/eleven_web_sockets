@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
@@ -29,6 +30,7 @@ const AudioRecorder: React.FC = () => {
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
   const [isAudioDetected, setIsAudioDetected] = useState(false);
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
+  const [checkingMic, setCheckingMic] = useState(false);
   
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -56,14 +58,17 @@ const AudioRecorder: React.FC = () => {
   useEffect(() => {
     if ((isSessionActive || micPermission === null) && navigator.mediaDevices) {
       console.log("Checking microphone permissions...");
+      setCheckingMic(true);
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
           console.log("Microphone permission granted");
           setMicPermission(true);
+          setCheckingMic(false);
         })
         .catch((error) => {
           console.error("Microphone permission denied:", error);
           setMicPermission(false);
+          setCheckingMic(false);
           toast({
             title: "Microphone Access Denied",
             description: "Please enable microphone access in your browser settings to use the recording feature.",
@@ -85,7 +90,9 @@ const AudioRecorder: React.FC = () => {
   }, [isSessionActive, greeting]);
   
   useEffect(() => {
-    if (micPermission === false) {
+    if (checkingMic) {
+      setDisabledReason("Checking microphone access...");
+    } else if (micPermission === false) {
       setDisabledReason("Microphone access is denied");
     } else if (isConnecting) {
       setDisabledReason("Connecting to server...");
@@ -99,9 +106,11 @@ const AudioRecorder: React.FC = () => {
       isSessionActive,
       isConnecting,
       micPermission,
-      isDisabled: micPermission === false || isConnecting
+      checkingMic,
+      disabledReason,
+      isDisabled: micPermission === false || isConnecting || checkingMic
     });
-  }, [isSessionActive, isConnecting, micPermission]);
+  }, [isSessionActive, isConnecting, micPermission, checkingMic]);
   
   const handleTalkButtonClick = () => {
     if (!isSessionActive) {
@@ -136,7 +145,7 @@ const AudioRecorder: React.FC = () => {
   };
   
   const isTalkButtonDisabled = (): boolean => {
-    return isConnecting || micPermission === false;
+    return isConnecting || micPermission === false || checkingMic;
   };
   
   return (
@@ -234,7 +243,7 @@ const AudioRecorder: React.FC = () => {
             isRecording && isAudioDetected ? "animate-pulse ring-2 ring-green-500" : 
             isRecording ? "animate-pulse" : "",
             isConnecting && "opacity-70",
-            isTalkButtonDisabled() && "cursor-not-allowed"
+            isTalkButtonDisabled() && "cursor-not-allowed opacity-60"
           )}
           onClick={handleTalkButtonClick}
           disabled={isTalkButtonDisabled()}
