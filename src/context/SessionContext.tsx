@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -57,6 +56,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioChunksRef = useRef<Blob[]>([]);
   const sessionActiveRef = useRef<boolean>(false);
   const isManuallyStoppingRef = useRef<boolean>(false);
+  const hasOpenedRef = useRef<boolean>(false);
   
   const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     if (typeof event.data === 'string') {
@@ -101,7 +101,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } else if (event.data instanceof Blob) {
       console.log(`📥 RECEIVED FROM SERVER (binary): ${event.data.size} bytes of audio`);
       
-      // Create and play audio
       const audio = new Audio(URL.createObjectURL(event.data));
       audio.play();
     }
@@ -113,6 +112,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     const ws = new WebSocket(wsUrl);
     websocketReadyRef.current = false;
+    hasOpenedRef.current = false;
     
     const connectionTimeoutId = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
@@ -131,14 +131,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("✅ WebSocket connection opened successfully", { readyState: ws.readyState });
       clearTimeout(connectionTimeoutId);
       
-      // Mark WebSocket as ready
       websocketReadyRef.current = true;
+      hasOpenedRef.current = true;
       
-      // Signal to the UI that connection is established
       setIsConnecting(false);
       setIsSessionActive(true);
       
-      // Send a connection confirmation message to the server
       try {
         ws.send(JSON.stringify({ 
           type: "connection_status", 
@@ -186,18 +184,22 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     ws.onclose = (event) => {
       console.log(`🔌 WebSocket connection closed: Code ${event.code}`, {
         reason: event.reason,
-        wasClean: event.wasClean
+        wasClean: event.wasClean,
+        hasOpened: hasOpenedRef.current
       });
       
       clearTimeout(connectionTimeoutId);
       
-      // Ensure ping interval is cleared in onclose as well
       if ((ws as any).pingInterval) {
         clearInterval((ws as any).pingInterval);
         (ws as any).pingInterval = null;
       }
       
       websocketReadyRef.current = false;
+      
+      if (!hasOpenedRef.current && !isManuallyStoppingRef.current) {
+        console.warn("❗ WebSocket closed before connection was established");
+      }
       
       if (event.code === 1006) {
         console.log("Abnormal closure. This might be due to network issues or server problems.");
@@ -238,28 +240,21 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (websocketRef.current) {
       const ws = websocketRef.current;
       
-      // Only close if ready or we're in an appropriate state
       if ((ws as any).pingInterval) {
         clearInterval((ws as any).pingInterval);
         (ws as any).pingInterval = null;
       }
       
-      // Handle WebSocket closure with appropriate state checks
-      if (websocketReadyRef.current && 
-          (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        // WebSocket is ready and in a state where we can close it
-        ws.close();
-      } else if (ws.readyState === WebSocket.CONNECTING) {
-        // WebSocket is still connecting but not ready
-        console.log("WebSocket is still connecting, delaying close");
-        
-        // Add a small delay before closing if in CONNECTING state
+      if (ws.readyState === WebSocket.CONNECTING) {
         setTimeout(() => {
           if (ws.readyState === WebSocket.CONNECTING) {
             console.log("Closing WebSocket after delay (was in CONNECTING state)");
             ws.close();
           }
-        }, 300);
+        }, 500);
+      } else if (websocketReadyRef.current && ws.readyState === WebSocket.OPEN) {
+        console.log("Closing open WebSocket connection");
+        ws.close();
       } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
         console.log(`WebSocket is already in ${ws.readyState === WebSocket.CLOSED ? 'CLOSED' : 'CLOSING'} state`);
       }
@@ -273,7 +268,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     if (audioStreamRef.current) {
       audioStreamRef.current.getTracks().forEach(track => track.stop());
-      audioStreamRef.current = null;
     }
     
     if (sessionId && user) {
@@ -384,7 +378,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
     
-    // Check WebSocket readyState before proceeding
     if (!websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) {
       console.error("Cannot start recording: WebSocket is not in OPEN state", 
         websocketRef.current ? `Current state: ${websocketRef.current.readyState}` : "WebSocket not initialized");
@@ -433,7 +426,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       mediaRecorderRef.current = recorder;
       
-      // Log WebSocket state before starting recorder
       console.log(`Starting MediaRecorder with WebSocket in state: ${websocketRef.current.readyState}`, {
         CONNECTING: WebSocket.CONNECTING,
         OPEN: WebSocket.OPEN,
@@ -441,7 +433,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         CLOSED: WebSocket.CLOSED,
       });
       
-      recorder.start(100); // Send data in 100ms chunks
+      recorder.start(100);
       console.log("Recording started successfully - speak now");
       
       toast({
@@ -497,17 +489,23 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   useEffect(() => {
     return () => {
-      // Guard cleanup on unmount
       if (!isManuallyStoppingRef.current) {
-        console.log("Component unmounting, stopping session");
+        console.log("Component unmounting, but waiting briefly before stopping session...");
         
-        // Check if WebSocket is in CONNECTING state
-        if (websocketRef.current?.readyState === WebSocket.CONNECTING) {
-          console.warn("Unmounting while WebSocket is still connecting");
-        }
-        
-        // Safely stop the session with minimal impact
-        stopSession();
+        setTimeout(() => {
+          if (websocketRef.current?.readyState === WebSocket.CONNECTING && !hasOpenedRef.current) {
+            console.warn("Skipping stopSession: WebSocket still connecting during unmount");
+            
+            if (websocketRef.current) {
+              console.log("Closing connecting WebSocket during unmount");
+              websocketRef.current.close();
+              websocketRef.current = null;
+            }
+          } else {
+            console.log("Safe to stop session after delay");
+            stopSession();
+          }
+        }, 250);
       }
     };
   }, [stopSession]);
@@ -517,6 +515,18 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       sessionActiveRef.current = isSessionActive;
     }
   }, [isSessionActive]);
+  
+  const getWebSocketStateText = () => {
+    if (!websocketRef.current) return 'Not Connected';
+    
+    switch (websocketRef.current.readyState) {
+      case WebSocket.CONNECTING: return 'Connecting (0)';
+      case WebSocket.OPEN: return 'Open (1)';
+      case WebSocket.CLOSING: return 'Closing (2)';
+      case WebSocket.CLOSED: return 'Closed (3)';
+      default: return 'Unknown';
+    }
+  };
   
   const contextValue: SessionContextType = {
     isSessionActive,
@@ -537,6 +547,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   return (
     <SessionContext.Provider value={contextValue}>
       {children}
+      {DEBUG_MODE && (
+        <div className="fixed bottom-2 right-2 text-xs text-muted-foreground border border-border rounded px-2 py-1 bg-background/80">
+          WebSocket: {getWebSocketStateText()}
+        </div>
+      )}
     </SessionContext.Provider>
   );
 };
