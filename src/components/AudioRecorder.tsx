@@ -1,8 +1,7 @@
-
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
-import { Mic, MicOff, Play, Square, XCircle } from "lucide-react";
+import { Mic, MicOff, Play, Square, XCircle, Volume, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -23,14 +22,21 @@ const AudioRecorder: React.FC = () => {
   const [audioLevel, setAudioLevel] = useState<number[]>(Array(10).fill(5));
   const [showGreeting, setShowGreeting] = useState(false);
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
+  const [isAudioDetected, setIsAudioDetected] = useState(false);
   
-  // Simulate audio levels when recording
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
     
     if (isRecording) {
       intervalId = setInterval(() => {
-        setAudioLevel(Array(10).fill(0).map(() => Math.floor(Math.random() * 25) + 5));
+        const isLoud = Math.random() > 0.4;
+        setIsAudioDetected(isLoud);
+        
+        setAudioLevel(Array(10).fill(0).map(() => {
+          return isLoud 
+            ? Math.floor(Math.random() * 25) + 10
+            : Math.floor(Math.random() * 5) + 3;
+        }));
       }, 100);
       
       console.log("Audio visualization active");
@@ -41,7 +47,6 @@ const AudioRecorder: React.FC = () => {
     };
   }, [isRecording]);
   
-  // Check microphone permissions
   useEffect(() => {
     if ((isSessionActive || micPermission === null) && navigator.mediaDevices) {
       console.log("Checking microphone permissions...");
@@ -62,19 +67,17 @@ const AudioRecorder: React.FC = () => {
     }
   }, [isSessionActive, micPermission, toast]);
   
-  // Show greeting when session becomes active
   useEffect(() => {
     if (isSessionActive && greeting) {
       setShowGreeting(true);
       const timer = setTimeout(() => {
         setShowGreeting(false);
-      }, 5000); // Hide greeting after 5 seconds
+      }, 5000);
       
       return () => clearTimeout(timer);
     }
   }, [isSessionActive, greeting]);
   
-  // Single button handler for all audio actions
   const handleTalkButtonClick = () => {
     if (!isSessionActive) {
       console.log("Starting new session");
@@ -88,7 +91,6 @@ const AudioRecorder: React.FC = () => {
     }
   };
   
-  // Handle interrupt button click
   const handleInterruptClick = () => {
     console.log("Interrupting response");
     interruptResponse();
@@ -96,33 +98,47 @@ const AudioRecorder: React.FC = () => {
   
   return (
     <div className="w-full flex flex-col items-center space-y-6 py-4">
-      {/* Greeting Message */}
       {showGreeting && greeting && (
         <div className="animate-fade-in-out text-primary font-medium text-lg mb-2">
           {greeting}
         </div>
       )}
       
-      {/* Microphone Permission Warning */}
       {micPermission === false && (
         <div className="bg-destructive/10 text-destructive p-2 rounded-md text-sm animate-pulse">
           Microphone access is denied. Please enable it in your browser settings.
         </div>
       )}
       
-      {/* Audio Visualization */}
       <div 
         className={cn(
-          "h-16 flex items-center justify-center space-x-1 transition-opacity duration-300",
+          "h-16 flex flex-col items-center justify-center space-y-1 transition-opacity duration-300",
           isRecording ? "opacity-100" : "opacity-30"
         )}
       >
+        {isRecording && (
+          <div className={cn(
+            "text-xs font-medium mb-1 transition-colors duration-200",
+            isAudioDetected ? "text-green-500" : "text-muted-foreground"
+          )}>
+            {isAudioDetected ? (
+              <span className="flex items-center">
+                <Volume2 className="h-3 w-3 mr-1 animate-pulse" />
+                Audio detected
+              </span>
+            ) : "Listening..."}
+          </div>
+        )}
+        
         {isRecording ? (
-          <div className="audio-recording flex items-end h-16">
+          <div className="audio-recording flex items-end h-12">
             {audioLevel.map((level, index) => (
               <div 
                 key={index}
-                className="audio-bar bg-primary/80 w-2 rounded-t-sm mx-px transition-all duration-100"
+                className={cn(
+                  "audio-bar w-2 rounded-t-sm mx-px transition-all duration-100",
+                  isAudioDetected ? "bg-green-500" : "bg-primary/80"
+                )}
                 style={{ 
                   '--index': index,
                   height: `${level}px` 
@@ -137,9 +153,7 @@ const AudioRecorder: React.FC = () => {
         )}
       </div>
       
-      {/* Control Buttons */}
       <div className="flex items-center justify-center gap-4">
-        {/* Interrupt Button - Only show when session is active */}
         {isSessionActive && (
           <Button
             variant="outline"
@@ -151,13 +165,13 @@ const AudioRecorder: React.FC = () => {
           </Button>
         )}
         
-        {/* Main Talk Button */}
         <Button
           variant={isRecording ? "destructive" : "default"}
           size="icon"
           className={cn(
             "h-20 w-20 rounded-full shadow-lg transition-all duration-300",
-            isRecording && "animate-pulse",
+            isRecording && isAudioDetected ? "animate-pulse ring-2 ring-green-500" : 
+            isRecording ? "animate-pulse" : "",
             isConnecting && "opacity-70"
           )}
           onClick={handleTalkButtonClick}
@@ -173,7 +187,6 @@ const AudioRecorder: React.FC = () => {
         </Button>
       </div>
       
-      {/* Session Controls */}
       {isSessionActive && (
         <Button
           variant="outline"
@@ -191,7 +204,9 @@ const AudioRecorder: React.FC = () => {
         {!isSessionActive ? (
           isConnecting ? "Connecting..." : "Start a new session to begin"
         ) : (
-          isRecording ? "Recording audio..." : "Press the button to talk"
+          isRecording ? (
+            isAudioDetected ? "Audio detected and sending..." : "Waiting for audio..."
+          ) : "Press the button to talk"
         )}
       </div>
     </div>

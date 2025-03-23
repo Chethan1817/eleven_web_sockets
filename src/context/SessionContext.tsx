@@ -345,6 +345,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("Microphone access granted");
       audioStreamRef.current = stream;
       
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      
       let mimeType = 'audio/webm;codecs=opus';
       
       const mimeTypes = [
@@ -373,28 +377,45 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       audioChunksRef.current = [];
       
       mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-          console.log(`📤 SENDING TO SERVER (audio): ${event.data.size} bytes, type: ${event.data.type}`);
-          websocketRef.current.send(event.data);
+        if (event.data.size > 0) {
+          console.log(`Recording data available: ${event.data.size} bytes, type: ${event.data.type}`);
+          audioChunksRef.current.push(event.data);
+          
+          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+            console.log(`📤 SENDING TO SERVER (audio): ${event.data.size} bytes, type: ${event.data.type}`);
+            websocketRef.current.send(event.data);
+            console.log(`Audio data sent to server`);
+          } else {
+            console.error("Cannot send audio:", {
+              dataSize: event.data.size,
+              wsExists: !!websocketRef.current,
+              wsState: websocketRef.current?.readyState,
+              wsStateDesc: websocketRef.current ? 
+                ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][websocketRef.current.readyState] : "NO_WEBSOCKET"
+            });
+          }
         } else {
-          console.log("Cannot send audio:", {
-            dataSize: event.data.size,
-            wsExists: !!websocketRef.current,
-            wsState: websocketRef.current?.readyState
-          });
+          console.log("Recording data available but size is 0");
         }
       };
       
+      mediaRecorder.onstart = () => {
+        console.log("MediaRecorder started");
+        setIsRecording(true);
+      };
+      
       mediaRecorder.onstop = () => {
-        console.log("Media recorder stopped");
+        console.log("MediaRecorder stopped");
         if (stream) {
           stream.getTracks().forEach(track => track.stop());
         }
       };
       
-      mediaRecorder.start(250);
-      setIsRecording(true);
+      mediaRecorder.onerror = (error) => {
+        console.error("MediaRecorder error:", error);
+      };
       
+      mediaRecorder.start(100); // Trigger ondataavailable every 100ms
       console.log("Recording started successfully");
       
     } catch (error) {

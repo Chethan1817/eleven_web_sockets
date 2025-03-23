@@ -15,6 +15,8 @@ export async function playPCMAudio(
   sampleRate: number = 16000,
   channels: number = 1
 ): Promise<{ start: () => void, stop: () => void }> {
+  console.log(`Setting up PCM audio playback: ${pcmBlob.size} bytes, ${sampleRate}Hz, ${channels} channels`);
+  
   // Convert blob to ArrayBuffer
   const arrayBuffer = await pcmBlob.arrayBuffer();
   
