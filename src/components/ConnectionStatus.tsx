@@ -11,6 +11,12 @@ const ConnectionStatus: React.FC = () => {
     streamController
   } = useSession();
   
+  console.log("ConnectionStatus rendering with:", { 
+    isSessionActive, 
+    isConnecting, 
+    hasStreamController: !!streamController 
+  });
+  
   if (isConnecting) {
     return (
       <Badge variant="outline" className="bg-primary/10 text-primary px-3 py-1">

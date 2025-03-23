@@ -451,6 +451,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
         
         streamControllerRef.current = controller;
+        
+        // Explicitly log the state after setting up the HTTP streaming
+        console.log("HTTP streaming setup complete, context state:", {
+          sessionId: newSessionId,
+          isConnecting: true,
+          isSessionActive: sessionActiveRef.current,
+          hasStreamController: !!controller
+        });
       } else {
         const response = await fetch(ENDPOINTS.CREATE_AUDIO_SESSION, {
           method: "POST",
@@ -632,6 +640,14 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     useHttpStreaming,
     setUseHttpStreaming,
   };
+  
+  // Add a debug log to see what's being provided by the context
+  console.log("SessionContext provider rendering with:", {
+    isSessionActive,
+    isConnecting,
+    hasStreamController: !!streamControllerRef.current,
+    sessionId
+  });
   
   return (
     <SessionContext.Provider value={contextValue}>

@@ -121,9 +121,12 @@ export function startHttpStreaming(
           // Process the chunk
           const chunk = decoder.decode(value, { stream: true });
           console.log(`[Stream] Raw chunk received: ${chunk.length} bytes`);
-          console.log("[Stream] Raw chunk content:", chunk);
+          console.log("[Stream] Raw chunk content:", chunk); // Added explicit log of raw chunk content
           
           buffer += chunk;
+          
+          // Add debug log before processing
+          console.log("[Stream] Current buffer before processing:", buffer);
           
           // Process any complete messages in the buffer
           const { processed, remainder } = processBuffer(buffer);
@@ -181,11 +184,13 @@ function processBuffer(buffer: string): {
   console.log("[Stream] Processing buffer:", buffer);
   
   // Process each line that ends with a newline
+  let lineCount = 0;
   while (remainder.includes('\n')) {
+    lineCount++;
     const newlinePos = remainder.indexOf('\n');
     const message = remainder.substring(0, newlinePos);
     
-    console.log("[Stream] Found message in buffer:", message);
+    console.log(`[Stream] Found line ${lineCount} in buffer:`, message);
     
     if (message.trim().length > 0) {
       try {
@@ -203,13 +208,18 @@ function processBuffer(buffer: string): {
         } else {
           // Regular JSON message
           processed.push(msgObj);
+          console.log("[Stream] Added message to processed queue:", msgObj);
         }
       } catch (e) {
         console.error('[Stream] Error parsing message:', e, message);
+        console.log('[Stream] Parse error details:', e);
       }
+    } else {
+      console.log('[Stream] Skipping empty message line');
     }
     
     remainder = remainder.substring(newlinePos + 1);
+    console.log(`[Stream] Remaining buffer after processing line ${lineCount}:`, remainder);
   }
   
   return { processed, remainder };
@@ -257,6 +267,7 @@ async function handleStreamMessage(
       
     case 'transcript':
       if (message.text) {
+        console.log(`[Stream] Received transcript: "${message.text}", is_final: ${message.is_final || false}`);
         onTranscript(message.text, message.is_final || false);
       }
       break;
@@ -264,19 +275,21 @@ async function handleStreamMessage(
     case 'response':
     case 'text':
       if (message.text) {
+        console.log(`[Stream] Received text response: "${message.text.substring(0, 50)}..."`);
         onResponse(message.text);
       }
       break;
       
     case 'user_transcript':
       if (message.text) {
+        console.log(`[Stream] Received user transcript: "${message.text}", is_final: ${message.is_final || false}`);
         onTranscript(message.text, message.is_final || false);
       }
       break;
       
     case 'connection_status':
       console.log("[Stream] Connection status update:", message.status, message.message);
-      onConnectionStatus(message.status, message.message);
+      onConnectionStatus(message.status, message.message || '');
       break;
       
     default:
