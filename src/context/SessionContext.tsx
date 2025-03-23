@@ -245,7 +245,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!isSessionActive || isRecording) return;
     
     try {
+      console.log("Attempting to access microphone...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("Microphone access granted");
       audioStreamRef.current = stream;
       
       const mediaRecorder = new MediaRecorder(stream, {
@@ -256,13 +258,15 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       audioChunksRef.current = [];
       
       mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && sessionId) {
+        if (event.data.size > 0 && sessionId && accessToken) {
           audioChunksRef.current.push(event.data);
           
           try {
-            // Send audio chunk to the new endpoint
+            console.log(`Sending audio chunk of size: ${event.data.size} bytes`);
+            
+            // Create a FormData object to send the audio chunk
             const formData = new FormData();
-            formData.append('audio', event.data);
+            formData.append('audio', new Blob([event.data], { type: 'audio/webm' }));
             formData.append('session_id', sessionId);
             
             const response = await fetch(ENDPOINTS.SEND_AUDIO_CHUNK, {
@@ -274,31 +278,40 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             });
             
             if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`Error sending audio chunk: ${response.status}`, errorText);
               throw new Error(`Error sending audio chunk: ${response.status}`);
             }
             
-            console.log("Audio chunk sent, size:", event.data.size);
+            console.log("Audio chunk sent successfully");
           } catch (error) {
             console.error("Error sending audio chunk:", error);
           }
+        } else {
+          console.log("No audio data or missing session ID/token", {
+            dataSize: event.data.size,
+            sessionId,
+            hasToken: !!accessToken
+          });
         }
       };
       
       mediaRecorder.onstop = () => {
+        console.log("Media recorder stopped");
         stream.getTracks().forEach(track => track.stop());
       };
       
-      // Use a smaller time slice for more frequent data sending
+      // Use a smaller time slice for more frequent data sending (250ms)
       mediaRecorder.start(250);
       setIsRecording(true);
       
-      console.log("Recording started");
+      console.log("Recording started successfully");
       
     } catch (error) {
       console.error("Error starting recording:", error);
       toast({
         title: "Recording Error",
-        description: "Could not access microphone.",
+        description: "Could not access microphone. Please check your browser permissions.",
         variant: "destructive",
       });
     }
@@ -306,8 +319,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
+      console.log("Stopping recording...");
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      console.log("Recording stopped");
     }
   }, [isRecording]);
   

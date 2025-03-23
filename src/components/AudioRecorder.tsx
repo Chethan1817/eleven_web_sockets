@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "@/context/SessionContext";
 import { Mic, MicOff, Play, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/use-toast";
 
 const AudioRecorder: React.FC = () => {
   const { 
@@ -17,8 +18,10 @@ const AudioRecorder: React.FC = () => {
     stopRecording 
   } = useSession();
   
+  const { toast } = useToast();
   const [audioLevel, setAudioLevel] = useState<number[]>(Array(10).fill(5));
   const [showGreeting, setShowGreeting] = useState(false);
+  const [micPermission, setMicPermission] = useState<boolean | null>(null);
   
   // Simulate audio levels when recording
   useEffect(() => {
@@ -36,6 +39,26 @@ const AudioRecorder: React.FC = () => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isRecording]);
+  
+  // Check microphone permissions
+  useEffect(() => {
+    if (isSessionActive && micPermission === null) {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(() => {
+          console.log("Microphone permission granted");
+          setMicPermission(true);
+        })
+        .catch((error) => {
+          console.error("Microphone permission denied:", error);
+          setMicPermission(false);
+          toast({
+            title: "Microphone Access Denied",
+            description: "Please enable microphone access in your browser settings to use the recording feature.",
+            variant: "destructive",
+          });
+        });
+    }
+  }, [isSessionActive, micPermission, toast]);
   
   // Show greeting when session becomes active
   useEffect(() => {
@@ -69,6 +92,13 @@ const AudioRecorder: React.FC = () => {
       {showGreeting && greeting && (
         <div className="animate-fade-in-out text-primary font-medium text-lg mb-2">
           {greeting}
+        </div>
+      )}
+      
+      {/* Microphone Permission Warning */}
+      {micPermission === false && (
+        <div className="bg-destructive/10 text-destructive p-2 rounded-md text-sm animate-pulse">
+          Microphone access is denied. Please enable it in your browser settings.
         </div>
       )}
       
@@ -110,7 +140,7 @@ const AudioRecorder: React.FC = () => {
             isConnecting && "opacity-70"
           )}
           onClick={handleTalkButtonClick}
-          disabled={isConnecting}
+          disabled={isConnecting || micPermission === false}
         >
           {!isSessionActive ? (
             <Play className="h-8 w-8" />
