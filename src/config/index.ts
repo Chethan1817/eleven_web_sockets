@@ -5,7 +5,7 @@
 
 // API base URLs
 export const API_BASE_URL = "http://localhost:8000";
-export const WEBSOCKET_BASE_URL = "ws://localhost:8000";
+export const WEBSOCKET_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 // API endpoints
 export const ENDPOINTS = {

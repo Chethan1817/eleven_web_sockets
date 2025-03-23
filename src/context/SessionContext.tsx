@@ -229,9 +229,28 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const wsUrl = data.websocket_url || ENDPOINTS.AUDIO_WEBSOCKET(userId, data.session_id);
       console.log("Connecting to WebSocket URL:", wsUrl);
       
+      if (websocketRef.current && websocketRef.current.readyState !== WebSocket.CLOSED) {
+        console.log("Closing existing WebSocket connection");
+        websocketRef.current.close();
+      }
+      
       const ws = new WebSocket(wsUrl);
       
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.error("WebSocket connection timeout");
+          ws.close();
+          setIsConnecting(false);
+          toast({
+            title: "Connection Timeout",
+            description: "Failed to establish WebSocket connection. Please try again.",
+            variant: "destructive",
+          });
+        }
+      }, 10000); // 10 seconds timeout
+      
       ws.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log("📡 WebSocket connection established");
         setIsSessionActive(true);
         setIsConnecting(false);
@@ -257,7 +276,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ws.onmessage = handleWebSocketMessage;
       
       ws.onerror = (error) => {
+        clearTimeout(connectionTimeout);
         console.error("📡 WebSocket error:", error);
+        setIsConnecting(false);
+        
         toast({
           title: "Connection Error",
           description: "Error with audio streaming connection.",
@@ -265,14 +287,24 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       };
       
-      ws.onclose = () => {
-        console.log("📡 WebSocket connection closed");
+      ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
+        console.log(`📡 WebSocket connection closed: Code ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''}`);
+        
         if (isSessionActive) {
           setIsSessionActive(false);
           
           toast({
             title: "Connection Closed",
             description: "Audio streaming session has ended.",
+          });
+        } else if (isConnecting) {
+          setIsConnecting(false);
+          
+          toast({
+            title: "Connection Failed",
+            description: "Could not establish connection to the audio server.",
+            variant: "destructive",
           });
         }
       };
