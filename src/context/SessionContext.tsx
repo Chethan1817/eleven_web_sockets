@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "./AuthContext";
@@ -61,18 +60,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioQueueRef = useRef<{url: string, id: string}[]>([]);
   const isPlayingRef = useRef<boolean>(false);
-  // Fix: properly name the audio player ref
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  
-  // Define clearAudioQueue before it's used
-  const clearAudioQueue = useCallback(() => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.src = '';
-    }
-    isPlayingRef.current = false;
-    audioQueueRef.current = [];
-  }, []);
   
   useEffect(() => {
     const audioPlayer = new Audio();
@@ -96,6 +84,15 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         audioPlayerRef.current.src = '';
       }
     };
+  }, []);
+  
+  const clearAudioQueue = useCallback(() => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.src = '';
+    }
+    isPlayingRef.current = false;
+    audioQueueRef.current = [];
   }, []);
   
   const playNextInQueue = useCallback(() => {
