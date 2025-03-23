@@ -59,7 +59,7 @@ export function startHttpStreaming(
   onTranscript: (text: string, isFinal: boolean) => void,
   onResponse: (text: string, audioData?: ArrayBuffer) => void,
   onConnectionStatus: (status: string, message?: string) => void
-) {
+): AbortController {
   console.log(`Starting HTTP streaming for session ${sessionId}...`);
   
   // Create AbortController for cleanup
@@ -71,7 +71,7 @@ export function startHttpStreaming(
   fetch(streamUrl, { 
     signal: controller.signal,
     headers: {
-      "Accept": "text/event-stream"
+      "Accept": "text/event-stream,application/octet-stream"
     }
   })
     .then(response => {
@@ -254,6 +254,7 @@ export async function sendHttpAudio(userId: string, sessionId: string, audioBlob
       method: 'POST',
       headers: {
         'Content-Type': audioBlob.type || 'audio/webm',
+        'Accept': 'application/json'
       },
       body: audioBlob,
     });
@@ -284,7 +285,10 @@ export async function closeHttpSession(userId: string, sessionId: string) {
     
     const response = await fetch(ENDPOINTS.CLOSE_HTTP_SESSION, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
       body: JSON.stringify({ 
         user_id: userId, 
         session_id: sessionId 

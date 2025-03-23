@@ -48,6 +48,22 @@ interface SessionContextType {
   setUseHttpStreaming: (useHttp: boolean) => void;
 }
 
+// TypeScript interfaces for stream callbacks
+interface TranscriptData {
+  text: string;
+  is_final: boolean;
+}
+
+interface ResponseData {
+  text: string;
+  type?: string;
+}
+
+interface AudioData {
+  blob: Blob;
+  format?: "mp3" | "pcm" | "auto";
+}
+
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -291,7 +307,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return ws;
   }, [handleWebSocketMessage, toast, isSessionActive, useHttpStreaming, setUseHttpStreaming]);
   
-  // Define stopSession first to resolve the reference error
+  // Define stopSession at the top level before it's used
   const stopSession = useCallback(async (): Promise<void> => {
     setIsSessionActive(false);
     setIsRecording(false);
@@ -359,7 +375,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSessionId(null);
   }, [sessionId, user, accessToken, clearAudioQueue, useHttpStreaming]);
   
-  const startSession = useCallback(async () => {
+  // Now define startSession which depends on stopSession
+  const startSession = useCallback(async (): Promise<void> => {
     if (!user) {
       toast({
         title: "Authentication Required",
@@ -380,46 +397,37 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         newSessionId = await createHttpSession(user.id);
         setSessionId(newSessionId);
         
-        const controller = await startHttpStreaming(
+        // Fix type issues with the callbacks for HTTP streaming
+        const controller = startHttpStreaming(
           user.id,
           newSessionId,
-          (transcript) => {
-            if (transcript) {
-              setTranscripts(prev => [...prev, {
-                id: `trans-${Date.now()}`,
-                text: transcript.text || "",
-                is_final: transcript.is_final || false,
-                timestamp: Date.now()
-              }]);
-            }
+          (text: string, isFinal: boolean) => {
+            setTranscripts(prev => [...prev, {
+              id: `trans-${Date.now()}`,
+              text: text || "",
+              is_final: isFinal || false,
+              timestamp: Date.now()
+            }]);
           },
-          (response) => {
-            if (response) {
-              setResponses(prev => [...prev, {
-                id: `resp-${Date.now()}`,
-                text: response.text || "",
-                type: response.type || "main",
-                timestamp: Date.now(),
-                raw_data: response
-              }]);
-            }
+          (text: string, audioData?: ArrayBuffer) => {
+            setResponses(prev => [...prev, {
+              id: `resp-${Date.now()}`,
+              text: text || "",
+              type: "main", // Default to main type
+              timestamp: Date.now()
+            }]);
           },
-          (audioBlobInfo) => {
-            if (audioBlobInfo) {
-              audioQueueRef.current.push({
-                blob: audioBlobInfo.blob,
-                id: `audio-${Date.now()}`,
-                format: audioBlobInfo.format || "auto"
-              });
-              
-              playNextInQueue();
+          (status: string, message?: string) => {
+            console.log(`Connection status: ${status} - ${message || ""}`);
+            
+            if (status === "connected") {
+              setIsConnecting(false);
+              setIsSessionActive(true);
             }
           }
         );
         
         streamControllerRef.current = controller;
-        setIsConnecting(false);
-        setIsSessionActive(true);
         
         toast({
           title: "Session Started",
@@ -458,7 +466,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive"
       });
     }
-  }, [user, accessToken, stopSession, toast, createWebSocketConnection, playNextInQueue, useHttpStreaming]);
+  }, [user, accessToken, stopSession, toast, createWebSocketConnection, useHttpStreaming]);
   
   const startRecording = useCallback(async () => {
     if (!isSessionActive) {
