@@ -50,6 +50,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
   
+  const isMountedRef = useRef(true);
   const websocketRef = useRef<WebSocket | null>(null);
   const websocketReadyRef = useRef<boolean>(false);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -58,6 +59,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const sessionActiveRef = useRef<boolean>(false);
   const isManuallyStoppingRef = useRef<boolean>(false);
   const hasOpenedRef = useRef<boolean>(false);
+  
+  // Set isMountedRef to false when component unmounts
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   
   const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     if (typeof event.data === 'string') {
@@ -104,13 +112,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const createWebSocketConnection = useCallback((userId: string, sessionId: string) => {
     const wsUrl = ENDPOINTS.AUDIO_WEBSOCKET(userId, sessionId);
     console.log(`Creating WebSocket connection to: ${wsUrl}`);
-    
+
     const ws = new WebSocket(wsUrl);
+
+    websocketRef.current = ws; // ✅ Assign early to persist across remounts
     websocketReadyRef.current = false;
     hasOpenedRef.current = false;
-    
-    // Don't assign websocketRef.current = ws here - wait until connection is established
-    
+
     const connectionTimeoutId = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
         console.warn("WebSocket connection timeout after 30 seconds");
@@ -123,20 +131,27 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       }
     }, 30000);
-    
+
     ws.onopen = () => {
+      if (!isMountedRef.current) {
+        console.warn("🛑 WebSocket opened after component unmounted — skipping init");
+        return;
+      }
+
+      if (websocketRef.current !== ws) {
+        console.warn("🛑 WebSocket ref was replaced — skipping this connection");
+        return;
+      }
+
       console.log("✅ WebSocket connection OPENED for session", sessionId, { readyState: ws.readyState });
       clearTimeout(connectionTimeoutId);
-      
-      // Only assign the WebSocket ref here, after successful connection
-      websocketRef.current = ws;
-      
+
       websocketReadyRef.current = true;
       hasOpenedRef.current = true;
-      
+
       setIsConnecting(false);
       setIsSessionActive(true);
-      
+
       try {
         ws.send(JSON.stringify({ 
           type: "connection_status", 
@@ -151,7 +166,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } catch (err) {
         console.error("Error sending connection confirmation:", err);
       }
-      
+
       const pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           try {
@@ -165,12 +180,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           console.log("Clearing ping interval, WebSocket is no longer open");
         }
       }, 30000);
-      
+
       (ws as any).pingInterval = pingInterval;
     };
-    
+
     ws.onmessage = handleWebSocketMessage;
-    
+
     ws.onerror = (error) => {
       console.error("❌ WebSocket connection error:", error);
       
@@ -180,45 +195,40 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         variant: "destructive"
       });
     };
-    
+
     ws.onclose = (event) => {
       console.log(`🔌 WebSocket connection closed: Code ${event.code}`, {
         reason: event.reason,
         wasClean: event.wasClean,
         hasOpened: hasOpenedRef.current
       });
-      
+
       clearTimeout(connectionTimeoutId);
-      
+
       if ((ws as any).pingInterval) {
         clearInterval((ws as any).pingInterval);
         (ws as any).pingInterval = null;
       }
-      
+
       websocketReadyRef.current = false;
-      
+
       if (!hasOpenedRef.current && !isManuallyStoppingRef.current) {
         console.warn("❗ WebSocket closed before connection was established");
       }
-      
-      if (event.code === 1006) {
-        console.log("Abnormal closure. This might be due to network issues or server problems.");
-        
-        if (isSessionActive) {
-          toast({
-            title: "Connection Lost",
-            description: "The connection was lost unexpectedly. Please try again.",
-            variant: "destructive"
-          });
-          
-          setIsSessionActive(false);
-          setIsConnecting(false);
-          setIsRecording(false);
-          setIsProcessing(false);
-        }
+
+      if (event.code === 1006 && isSessionActive) {
+        toast({
+          title: "Connection Lost",
+          description: "The connection was lost unexpectedly. Please try again.",
+          variant: "destructive"
+        });
+        setIsSessionActive(false);
+        setIsConnecting(false);
+        setIsRecording(false);
+        setIsProcessing(false);
       }
     };
-    
+
     return ws;
   }, [handleWebSocketMessage, toast]);
   
@@ -344,8 +354,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log("🆕 Received session_id:", newSessionId);
       setSessionId(newSessionId);
       
-      // Just create the WebSocket, but don't assign to websocketRef.current yet
-      // That assignment happens in ws.onopen callback
+      // Create the WebSocket connection
+      // Note: websocketRef assignment now happens inside createWebSocketConnection
       createWebSocketConnection(userIdString, newSessionId);
       
       toast({
