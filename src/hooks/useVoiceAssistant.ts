@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,7 +14,6 @@ export function useVoiceAssistant(userId: string) {
   console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
 
   useEffect(() => {
-    // Only connect if we're actively listening
     if (!isListening) {
       console.log("[useVoiceAssistant] Not listening, skipping WebSocket connection");
       return;
@@ -36,7 +34,7 @@ export function useVoiceAssistant(userId: string) {
         console.log("[useVoiceAssistant] ✅ WebSocket connected successfully");
         console.log("[useVoiceAssistant] WebSocket readyState:", ws.readyState);
         setIsConnected(true);
-        reconnectAttemptsRef.current = 0; // Reset reconnect attempts on successful connection
+        reconnectAttemptsRef.current = 0;
         toast({
           title: "Connected to voice assistant",
           description: "You can now speak to the assistant",
@@ -49,7 +47,6 @@ export function useVoiceAssistant(userId: string) {
           const byteLength = event.data.byteLength;
           console.log(`[useVoiceAssistant] Received binary data: ${byteLength} bytes`);
           
-          // Only log details for smaller audio chunks to avoid flooding the console
           if (byteLength < 10000) {
             const view = new DataView(event.data);
             const firstBytes = [];
@@ -72,7 +69,7 @@ export function useVoiceAssistant(userId: string) {
           audio.onended = () => {
             console.log("[useVoiceAssistant] Audio playback ended");
             setIsPlaying(false);
-            URL.revokeObjectURL(url); // Clean up the blob URL
+            URL.revokeObjectURL(url);
             console.log("[useVoiceAssistant] Revoked audio URL");
           };
           
@@ -86,7 +83,6 @@ export function useVoiceAssistant(userId: string) {
             const message = JSON.parse(event.data);
             console.log("[useVoiceAssistant] ℹ️ Parsed JSON message:", message);
             
-            // Handle different message types
             if (message.type === "error") {
               console.warn("[useVoiceAssistant] Error message received:", message.message);
               toast({
@@ -107,8 +103,8 @@ export function useVoiceAssistant(userId: string) {
       ws.onerror = (err) => {
         console.error("[useVoiceAssistant] ❌ WebSocket error:", err);
         console.log("[useVoiceAssistant] WebSocket readyState:", ws.readyState);
+        
         console.log("[useVoiceAssistant] Error details:", {
-          message: err.message,
           type: err.type,
           bubbles: err.bubbles,
           cancelable: err.cancelable
@@ -127,15 +123,12 @@ export function useVoiceAssistant(userId: string) {
         console.log("[useVoiceAssistant] WebSocket was clean:", event.wasClean);
         setIsConnected(false);
         
-        // Try to reconnect if the connection was lost unexpectedly and we're still listening
         if (isListening && !event.wasClean && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           console.log(`[useVoiceAssistant] Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
-          // Wait a bit before reconnecting
           setTimeout(() => {
             if (isListening) {
               console.log("[useVoiceAssistant] Reconnecting...");
-              // The useEffect will run again and reconnect
             }
           }, 1000);
         } else if (isListening) {
@@ -181,7 +174,7 @@ export function useVoiceAssistant(userId: string) {
 
   const startListening = () => {
     console.log("[useVoiceAssistant] Starting to listen");
-    reconnectAttemptsRef.current = 0; // Reset reconnect attempts when manually starting
+    reconnectAttemptsRef.current = 0;
     setIsListening(true);
   };
 
@@ -222,7 +215,6 @@ export function useVoiceAssistant(userId: string) {
       const chunkSize = pcmChunk.byteLength;
       console.log(`[useVoiceAssistant] Sending audio chunk: ${chunkSize} bytes`);
       
-      // Log the first few bytes of the chunk for debugging
       if (chunkSize > 0) {
         const view = new DataView(pcmChunk);
         const firstBytes = [];
@@ -243,7 +235,6 @@ export function useVoiceAssistant(userId: string) {
     } else {
       console.warn(`[useVoiceAssistant] Cannot send audio chunk: socket readyState is ${readyState}`);
       
-      // Map readyState to a human-readable string for better debugging
       const readyStateMap = {
         [WebSocket.CONNECTING]: "CONNECTING",
         [WebSocket.OPEN]: "OPEN",
