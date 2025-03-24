@@ -36,6 +36,37 @@ const AudioRecorder: React.FC = () => {
 
   console.log("[AudioRecorder] Current state:", { isRecording, isConnected, isListening, isPlaying });
 
+  // Helper function to resample audio to 16kHz Int16 PCM
+  const resampleTo16kHz = async (
+    float32Array: Float32Array,
+    fromSampleRate: number
+  ): Promise<Int16Array> => {
+    console.log("[AudioRecorder] Resampling audio from", fromSampleRate, "Hz to 16kHz");
+    
+    const offlineCtx = new OfflineAudioContext(1, float32Array.length * (16000 / fromSampleRate), 16000);
+    const buffer = offlineCtx.createBuffer(1, float32Array.length, fromSampleRate);
+    buffer.copyToChannel(float32Array, 0);
+
+    const source = offlineCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(offlineCtx.destination);
+    source.start();
+
+    const rendered = await offlineCtx.startRendering();
+    const resampled = rendered.getChannelData(0);
+    console.log("[AudioRecorder] Resampled audio length:", resampled.length);
+
+    // Convert Float32 to Int16
+    const int16 = new Int16Array(resampled.length);
+    for (let i = 0; i < resampled.length; i++) {
+      let s = Math.max(-1, Math.min(1, resampled[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    
+    console.log("[AudioRecorder] Converted to Int16 PCM, first few samples:", int16.slice(0, 5));
+    return int16;
+  };
+
   const startRecording = async () => {
     console.log("[AudioRecorder] Starting recording process");
     try {
@@ -104,9 +135,15 @@ const AudioRecorder: React.FC = () => {
             console.log(`[AudioRecorder] Average audio level: ${average.toFixed(5)}`);
           }
           
-          // Convert to ArrayBuffer and send
-          console.log(`[AudioRecorder] Sending audio chunk: ${dataArray.buffer.byteLength} bytes`);
-          sendAudioChunk(dataArray.buffer);
+          // Resample to 16kHz and convert to Int16 before sending
+          if (audioContextRef.current) {
+            resampleTo16kHz(dataArray, audioContextRef.current.sampleRate).then(int16 => {
+              console.log(`[AudioRecorder] Sending resampled audio chunk: ${int16.buffer.byteLength} bytes`);
+              sendAudioChunk(int16.buffer);
+            }).catch(error => {
+              console.error("[AudioRecorder] Error resampling audio:", error);
+            });
+          }
         } else {
           console.warn("[AudioRecorder] Analyzer node is unavailable");
         }

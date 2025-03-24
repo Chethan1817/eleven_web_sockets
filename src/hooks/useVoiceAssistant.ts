@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -58,23 +59,15 @@ export function useVoiceAssistant(userId: string) {
             console.log(`[useVoiceAssistant] Audio data samples: ${firstBytes.join(', ')}...`);
           }
           
-          const blob = new Blob([event.data], { type: "audio/mpeg" });
-          const url = URL.createObjectURL(blob);
-          console.log("[useVoiceAssistant] Created audio URL:", url);
-          const audio = new Audio(url);
-          
           setIsPlaying(true);
           console.log("[useVoiceAssistant] Starting audio playback");
           
-          audio.onended = () => {
+          // Play PCM audio data
+          playPcmAudio(event.data).then(() => {
             console.log("[useVoiceAssistant] Audio playback ended");
             setIsPlaying(false);
-            URL.revokeObjectURL(url);
-            console.log("[useVoiceAssistant] Revoked audio URL");
-          };
-          
-          audio.play().catch(error => {
-            console.error("[useVoiceAssistant] Failed to play audio:", error);
+          }).catch(error => {
+            console.error("[useVoiceAssistant] Failed to play PCM audio:", error);
             setIsPlaying(false);
           });
         } else {
@@ -171,6 +164,44 @@ export function useVoiceAssistant(userId: string) {
       console.log("[useVoiceAssistant] Set isConnected to false");
     };
   }, [userId, isListening, toast]);
+
+  // Function to play PCM audio data
+  const playPcmAudio = async (pcmData: ArrayBuffer): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const audioCtx = new AudioContext({ sampleRate: 16000 });
+        console.log("[useVoiceAssistant] Created AudioContext for playback with sample rate:", audioCtx.sampleRate);
+
+        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 16000);
+        const channel = audioBuffer.getChannelData(0);
+        const view = new DataView(pcmData);
+
+        console.log("[useVoiceAssistant] Converting Int16 PCM to Float32 for playback, buffer length:", channel.length);
+        for (let i = 0; i < channel.length; i++) {
+          const int16 = view.getInt16(i * 2, true);
+          channel[i] = int16 / 0x8000;
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        
+        source.onended = () => {
+          console.log("[useVoiceAssistant] AudioBufferSourceNode playback ended");
+          audioCtx.close().then(() => {
+            console.log("[useVoiceAssistant] AudioContext closed after playback");
+            resolve();
+          });
+        };
+        
+        source.start();
+        console.log("[useVoiceAssistant] Started PCM audio playback");
+      } catch (error) {
+        console.error("[useVoiceAssistant] Error playing PCM audio:", error);
+        reject(error);
+      }
+    });
+  };
 
   const startListening = () => {
     console.log("[useVoiceAssistant] Starting to listen");
