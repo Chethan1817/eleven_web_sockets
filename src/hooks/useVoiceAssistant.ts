@@ -1,6 +1,9 @@
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+
+// Create a singleton WebSocket reference that persists across component instances
+let globalWsRef: WebSocket | null = null;
+let globalHasConnected = false;
 
 export function useVoiceAssistant(userId: string) {
   const socketRef = useRef<WebSocket | null>(null);
@@ -12,6 +15,7 @@ export function useVoiceAssistant(userId: string) {
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 3;
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
+  const hasStartedRef = useRef(false);
   const { toast } = useToast();
 
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
@@ -63,19 +67,27 @@ export function useVoiceAssistant(userId: string) {
   }, [addLog]);
 
   const startListening = useCallback(() => {
+    // Guard against multiple starts
+    if (isConnected || socketRef.current || hasStartedRef.current) {
+      addLog("⚠️ Ignoring startListening - already active or started");
+      return;
+    }
+
     addLog("Starting voice assistant session");
     reconnectAttemptsRef.current = 0;
     audioQueueRef.current = [];
     setIsPlaying(false);
     setIsListening(true);
     setLogs([]);
-  }, [addLog]);
+    hasStartedRef.current = true;
+  }, [addLog, isConnected]);
 
   const stopListening = useCallback(() => {
     addLog("Stopping voice assistant session");
     setIsListening(false);
     audioQueueRef.current = [];
     setIsPlaying(false);
+    hasStartedRef.current = false;
     
     if (socketRef.current) {
       const readyState = socketRef.current.readyState;
@@ -89,6 +101,11 @@ export function useVoiceAssistant(userId: string) {
       }
       
       socketRef.current = null;
+      
+      // Clear the global reference if we're closing it
+      if (globalWsRef === socketRef.current) {
+        globalWsRef = null;
+      }
     }
   }, [addLog]);
 
@@ -172,13 +189,24 @@ export function useVoiceAssistant(userId: string) {
       return;
     }
 
+    // Use the global WebSocket if it exists and is in a good state
+    if (globalWsRef && (globalWsRef.readyState === WebSocket.OPEN || globalWsRef.readyState === WebSocket.CONNECTING)) {
+      addLog("Using existing global WebSocket connection");
+      socketRef.current = globalWsRef;
+      if (globalWsRef.readyState === WebSocket.OPEN) {
+        setIsConnected(true);
+      }
+      return;
+    }
+
     const wsUrl = `ws://localhost:8000/ws/audio/?user_id=${userId}`;
     addLog(`Connecting to WebSocket: ${wsUrl}`);
     
     try {
       const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
-
+      globalWsRef = ws; // Store in the global reference
+      
       ws.binaryType = "arraybuffer";
       addLog("Set WebSocket binaryType to arraybuffer");
 
@@ -186,6 +214,8 @@ export function useVoiceAssistant(userId: string) {
         addLog("✅ WebSocket connected successfully");
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
+        globalHasConnected = true;
+        
         toast({
           title: "Connected to voice assistant",
           description: "You can now speak to the assistant",
@@ -251,6 +281,11 @@ export function useVoiceAssistant(userId: string) {
             description: "Connection to voice assistant closed",
           });
         }
+        
+        // Clear the global reference if this was our socket
+        if (globalWsRef === ws) {
+          globalWsRef = null;
+        }
       };
     } catch (error) {
       console.error("[useVoiceAssistant] Error creating WebSocket:", error);
@@ -263,7 +298,9 @@ export function useVoiceAssistant(userId: string) {
 
     return () => {
       console.log("[useVoiceAssistant] Cleaning up WebSocket connection");
-      if (socketRef.current) {
+      // Only close the WebSocket if this component is being unmounted and we want to stop listening
+      // Otherwise, keep it alive for the next component that will use it
+      if (socketRef.current && !isListening) {
         const readyState = socketRef.current.readyState;
         
         if (readyState !== WebSocket.CLOSED && readyState !== WebSocket.CLOSING) {
@@ -272,6 +309,11 @@ export function useVoiceAssistant(userId: string) {
           } catch (error) {
             console.error("[useVoiceAssistant] Error closing WebSocket:", error);
           }
+        }
+        
+        // Clear the global reference if this was our socket and we're closing it
+        if (globalWsRef === socketRef.current) {
+          globalWsRef = null;
         }
       }
       setIsConnected(false);

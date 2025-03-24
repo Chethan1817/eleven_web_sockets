@@ -3,12 +3,8 @@ import React from "react";
 import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
 import { useAuth } from "@/context/AuthContext";
 
-const StatusIndicator: React.FC = () => {
-  const { user } = useAuth();
-  console.log("[StatusIndicator] User data:", user);
-  const userId = user?.id ? String(user.id) : user?.phone_number || "";
-  console.log("[StatusIndicator] Using userId:", userId);
-  
+// Create a wrapper component to manage the hook instance
+const StatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
   const { isConnected, isListening, isPlaying } = useVoiceAssistant(userId);
   console.log("[StatusIndicator] Current state:", { isConnected, isListening, isPlaying });
 
@@ -45,6 +41,20 @@ const StatusIndicator: React.FC = () => {
       </span>
     </div>
   );
+};
+
+// Main component that manages whether to render the content
+const StatusIndicator: React.FC = () => {
+  const { user } = useAuth();
+  console.log("[StatusIndicator] User data:", user);
+  const userId = user?.id ? String(user.id) : user?.phone_number || "";
+  console.log("[StatusIndicator] Using userId:", userId);
+  
+  if (!userId) {
+    return null;
+  }
+
+  return <StatusIndicatorContent userId={userId} />;
 };
 
 export default StatusIndicator;

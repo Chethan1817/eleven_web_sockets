@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Loader } from "lucide-react";
@@ -25,6 +26,7 @@ const AudioRecorder: React.FC = () => {
   }>({});
   const animationFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cleanupInProgressRef = useRef(false);
   
   const { 
     sendAudioChunk, 
@@ -182,6 +184,13 @@ const AudioRecorder: React.FC = () => {
   };
 
   const stopRecording = () => {
+    // Guard against multiple cleanup calls
+    if (cleanupInProgressRef.current) {
+      console.log("[AudioRecorder] Cleanup already in progress, ignoring duplicate stopRecording call");
+      return;
+    }
+    
+    cleanupInProgressRef.current = true;
     console.log("[AudioRecorder] Stopping recording");
     
     // Cancel any ongoing animation frame
@@ -274,8 +283,15 @@ const AudioRecorder: React.FC = () => {
     setIsRecording(false);
     console.log("[AudioRecorder] Set isRecording to false");
     
-    stopListening();
-    console.log("[AudioRecorder] Stopped listening for assistant responses");
+    // Only call stopListening if we were actually listening
+    if (isListening) {
+      stopListening();
+      console.log("[AudioRecorder] Stopped listening for assistant responses");
+    } else {
+      console.log("[AudioRecorder] Not listening, no need to stop");
+    }
+    
+    cleanupInProgressRef.current = false;
   };
 
   // Clean up on component unmount
@@ -283,6 +299,12 @@ const AudioRecorder: React.FC = () => {
     console.log("[AudioRecorder] Component mounted");
     return () => {
       console.log("[AudioRecorder] Component unmounting, cleaning up resources");
+      
+      // Prevent duplicate cleanup
+      if (cleanupInProgressRef.current) {
+        console.log("[AudioRecorder] Cleanup already in progress, skipping unmount cleanup");
+        return;
+      }
       
       // Cancel any ongoing animation frame
       if (animationFrameRef.current !== null) {
@@ -333,6 +355,7 @@ const AudioRecorder: React.FC = () => {
       }
       
       console.log("[AudioRecorder] Cleanup: Stopping listening");
+      // Only call stopListening if we were actually listening to avoid setState on unmounted component
       if (isListening) {
         stopListening();
       }
