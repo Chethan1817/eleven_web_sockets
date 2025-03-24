@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Loader } from "lucide-react";
@@ -21,6 +22,8 @@ const AudioRecorder: React.FC = () => {
     source?: MediaStreamAudioSourceNode,
     analyzer?: AnalyserNode
   }>({});
+  const animationFrameRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   
   const { 
     sendAudioChunk, 
@@ -37,14 +40,25 @@ const AudioRecorder: React.FC = () => {
     console.log("[AudioRecorder] Starting recording process");
     try {
       console.log("[AudioRecorder] Requesting microphone access");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       console.log("[AudioRecorder] Microphone access granted:", stream);
+      streamRef.current = stream;
       
       // Initialize AudioContext
       console.log("[AudioRecorder] Creating new AudioContext");
-      const audioContext = new AudioContext();
+      const audioContext = new AudioContext({
+        latencyHint: 'interactive',
+        sampleRate: 44100
+      });
       audioContextRef.current = audioContext;
       console.log("[AudioRecorder] AudioContext created with state:", audioContext.state);
+      console.log("[AudioRecorder] AudioContext sample rate:", audioContext.sampleRate);
       
       // Create source from the microphone stream
       console.log("[AudioRecorder] Creating MediaStreamAudioSourceNode");
@@ -56,6 +70,7 @@ const AudioRecorder: React.FC = () => {
       console.log("[AudioRecorder] Creating AnalyserNode");
       const analyzer = audioContext.createAnalyser();
       analyzer.fftSize = 2048;
+      analyzer.smoothingTimeConstant = 0.8;
       audioNodesRef.current.analyzer = analyzer;
       console.log("[AudioRecorder] AnalyserNode created with fftSize:", analyzer.fftSize);
       
@@ -75,7 +90,19 @@ const AudioRecorder: React.FC = () => {
         const dataArray = new Float32Array(bufferSize);
         if (audioNodesRef.current.analyzer) {
           audioNodesRef.current.analyzer.getFloatTimeDomainData(dataArray);
-          console.log(`[AudioRecorder] Got audio data, sample values: ${dataArray[0].toFixed(3)}, ${dataArray[1].toFixed(3)}...`);
+          
+          // Log only occasionally to avoid console flooding
+          if (Math.random() < 0.05) {  // Log roughly 5% of the time
+            console.log(`[AudioRecorder] Got audio data, sample values: ${dataArray[0].toFixed(3)}, ${dataArray[1].toFixed(3)}...`);
+            
+            // Calculate audio level for debugging
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += Math.abs(dataArray[i]);
+            }
+            const average = sum / dataArray.length;
+            console.log(`[AudioRecorder] Average audio level: ${average.toFixed(5)}`);
+          }
           
           // Convert to ArrayBuffer and send
           console.log(`[AudioRecorder] Sending audio chunk: ${dataArray.buffer.byteLength} bytes`);
@@ -85,17 +112,20 @@ const AudioRecorder: React.FC = () => {
         }
         
         // Schedule next processing
-        requestAnimationFrame(processAudio);
+        animationFrameRef.current = requestAnimationFrame(processAudio);
       };
       
       // Start processing audio frames
-      processAudio();
+      animationFrameRef.current = requestAnimationFrame(processAudio);
       console.log("[AudioRecorder] Started audio processing loop");
       
       // Also keep MediaRecorder as backup
       console.log("[AudioRecorder] Creating MediaRecorder");
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
       mediaRecorderRef.current = mediaRecorder;
+      console.log("[AudioRecorder] MediaRecorder created with mimeType:", mediaRecorder.mimeType);
       
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -104,8 +134,8 @@ const AudioRecorder: React.FC = () => {
         }
       };
       
-      mediaRecorder.start();
-      console.log("[AudioRecorder] MediaRecorder started");
+      mediaRecorder.start(1000);  // Collect data every second
+      console.log("[AudioRecorder] MediaRecorder started with interval: 1000ms");
       
       setIsRecording(true);
       console.log("[AudioRecorder] Set isRecording to true");
@@ -127,21 +157,28 @@ const AudioRecorder: React.FC = () => {
   const stopRecording = () => {
     console.log("[AudioRecorder] Stopping recording");
     
+    // Cancel any ongoing animation frame
+    if (animationFrameRef.current !== null) {
+      console.log("[AudioRecorder] Cancelling animation frame:", animationFrameRef.current);
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+      console.log("[AudioRecorder] Animation frame cancelled");
+    }
+    
+    // Stop MediaRecorder if it exists
     if (mediaRecorderRef.current) {
-      console.log("[AudioRecorder] Stopping MediaRecorder");
-      mediaRecorderRef.current.stop();
+      console.log("[AudioRecorder] Stopping MediaRecorder, current state:", mediaRecorderRef.current.state);
       
-      // Stop all audio tracks from the stream
-      if (mediaRecorderRef.current.stream) {
-        console.log("[AudioRecorder] Stopping media tracks");
-        mediaRecorderRef.current.stream.getTracks().forEach(track => {
-          console.log(`[AudioRecorder] Stopping track: ${track.kind}`);
-          track.stop();
-        });
+      if (mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+          console.log("[AudioRecorder] MediaRecorder stopped successfully");
+        } catch (error) {
+          console.error("[AudioRecorder] Error stopping MediaRecorder:", error);
+        }
+      } else {
+        console.log("[AudioRecorder] MediaRecorder already inactive, no need to stop");
       }
-      
-      audioChunksRef.current = [];
-      console.log("[AudioRecorder] Cleared audio chunks");
       
       mediaRecorderRef.current = null;
       console.log("[AudioRecorder] Set mediaRecorderRef to null");
@@ -149,9 +186,20 @@ const AudioRecorder: React.FC = () => {
       console.log("[AudioRecorder] No MediaRecorder to stop");
     }
     
+    // Stop audio tracks
+    if (streamRef.current) {
+      console.log("[AudioRecorder] Stopping media tracks");
+      streamRef.current.getTracks().forEach(track => {
+        console.log(`[AudioRecorder] Stopping track: ${track.kind}, ID: ${track.id}`);
+        track.stop();
+      });
+      streamRef.current = null;
+      console.log("[AudioRecorder] Stream reference cleared");
+    }
+    
     // Clean up AudioContext resources
     if (audioContextRef.current) {
-      console.log("[AudioRecorder] Cleaning up AudioContext resources");
+      console.log("[AudioRecorder] Cleaning up AudioContext resources, current state:", audioContextRef.current.state);
       
       // Disconnect nodes first
       if (audioNodesRef.current.source) {
@@ -188,6 +236,14 @@ const AudioRecorder: React.FC = () => {
       console.log("[AudioRecorder] Set audioContextRef to null");
     }
     
+    // Clear audio nodes
+    audioNodesRef.current = {};
+    console.log("[AudioRecorder] Cleared audio nodes reference");
+    
+    // Clear audio chunks
+    audioChunksRef.current = [];
+    console.log("[AudioRecorder] Cleared audio chunks");
+    
     setIsRecording(false);
     console.log("[AudioRecorder] Set isRecording to false");
     
@@ -200,18 +256,32 @@ const AudioRecorder: React.FC = () => {
     console.log("[AudioRecorder] Component mounted");
     return () => {
       console.log("[AudioRecorder] Component unmounting, cleaning up resources");
+      
+      // Cancel any ongoing animation frame
+      if (animationFrameRef.current !== null) {
+        console.log("[AudioRecorder] Cleanup: Cancelling animation frame");
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      
       if (mediaRecorderRef.current) {
         if (mediaRecorderRef.current.state !== 'inactive') {
           console.log("[AudioRecorder] Stopping active MediaRecorder");
-          mediaRecorderRef.current.stop();
+          try {
+            mediaRecorderRef.current.stop();
+          } catch (error) {
+            console.error("[AudioRecorder] Error stopping MediaRecorder during cleanup:", error);
+          }
         }
-        if (mediaRecorderRef.current.stream) {
-          console.log("[AudioRecorder] Stopping media tracks");
-          mediaRecorderRef.current.stream.getTracks().forEach(track => {
-            console.log(`[AudioRecorder] Stopping track: ${track.kind}`);
-            track.stop();
-          });
-        }
+      }
+      
+      if (streamRef.current) {
+        console.log("[AudioRecorder] Stopping media tracks");
+        streamRef.current.getTracks().forEach(track => {
+          console.log(`[AudioRecorder] Stopping track: ${track.kind}`);
+          track.stop();
+        });
+        streamRef.current = null;
       }
       
       // Safely close AudioContext if it exists and isn't already closed

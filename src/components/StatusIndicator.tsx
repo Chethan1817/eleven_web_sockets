@@ -9,8 +9,8 @@ const StatusIndicator: React.FC = () => {
   const userId = user?.id ? String(user.id) : user?.phone_number || "";
   console.log("[StatusIndicator] Using userId:", userId);
   
-  const { isConnected, isListening } = useVoiceAssistant(userId);
-  console.log("[StatusIndicator] Current state:", { isConnected, isListening });
+  const { isConnected, isListening, isPlaying } = useVoiceAssistant(userId);
+  console.log("[StatusIndicator] Current state:", { isConnected, isListening, isPlaying });
 
   if (!isConnected && !isListening) {
     console.log("[StatusIndicator] Not connected or listening, not rendering");
@@ -30,6 +30,19 @@ const StatusIndicator: React.FC = () => {
           {isConnected ? "Connected" : "Connecting..."}
         </span>
       </div>
+      
+      {isPlaying && (
+        <div className="ml-2 flex items-center">
+          <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+          <span className="ml-2 text-xs text-muted-foreground">
+            Playing
+          </span>
+        </div>
+      )}
+      
+      <span className="text-xs text-muted-foreground ml-2">
+        {userId ? `User: ${userId}` : "No User ID"}
+      </span>
     </div>
   );
 };
