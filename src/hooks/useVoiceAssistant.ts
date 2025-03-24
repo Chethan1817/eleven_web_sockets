@@ -85,7 +85,9 @@ export function useVoiceAssistant(userId: string) {
     };
 
     return () => {
-      ws.close();
+      if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) {
+        socketRef.current.close();
+      }
       setIsConnected(false);
     };
   }, [userId, isListening, toast]);
@@ -96,7 +98,7 @@ export function useVoiceAssistant(userId: string) {
 
   const stopListening = () => {
     setIsListening(false);
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) {
       socketRef.current.close();
       socketRef.current = null;
     }

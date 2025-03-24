@@ -7,13 +7,17 @@ import { useToast } from "@/hooks/use-toast";
 
 const AudioRecorder: React.FC = () => {
   const { user } = useAuth();
-  const userId = user?.phone_number || "";
+  const userId = user?.id ? String(user.id) : user?.phone_number || "";
   const { toast } = useToast();
   
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const audioNodesRef = useRef<{
+    source?: MediaStreamAudioSourceNode,
+    analyzer?: AnalyserNode
+  }>({});
   
   const { 
     sendAudioChunk, 
@@ -28,22 +32,38 @@ const AudioRecorder: React.FC = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Initialize AudioContext for PCM processing
+      // Initialize AudioContext
       const audioContext = new AudioContext();
       audioContextRef.current = audioContext;
       
+      // Create source from the microphone stream
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      audioNodesRef.current.source = source;
       
-      // Process audio to get PCM data
-      processor.onaudioprocess = (e) => {
-        const pcmData = e.inputBuffer.getChannelData(0);
-        // Convert Float32Array to ArrayBuffer
-        sendAudioChunk(pcmData.buffer);
+      // Create an analyzer to get audio data
+      const analyzer = audioContext.createAnalyser();
+      analyzer.fftSize = 2048;
+      audioNodesRef.current.analyzer = analyzer;
+      
+      source.connect(analyzer);
+      
+      // Use a smaller buffer size and process audio
+      const bufferSize = 4096;
+      const processAudio = () => {
+        if (!isRecording || !audioContextRef.current) return;
+        
+        const dataArray = new Float32Array(bufferSize);
+        audioNodesRef.current.analyzer?.getFloatTimeDomainData(dataArray);
+        
+        // Convert to ArrayBuffer and send
+        sendAudioChunk(dataArray.buffer);
+        
+        // Schedule next processing
+        requestAnimationFrame(processAudio);
       };
       
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      // Start processing audio frames
+      processAudio();
       
       // Also keep MediaRecorder as backup
       const mediaRecorder = new MediaRecorder(stream);
@@ -84,7 +104,18 @@ const AudioRecorder: React.FC = () => {
     
     // Clean up AudioContext resources
     if (audioContextRef.current) {
-      audioContextRef.current.close().catch(console.error);
+      // Disconnect nodes first
+      if (audioNodesRef.current.source) {
+        audioNodesRef.current.source.disconnect();
+      }
+      if (audioNodesRef.current.analyzer) {
+        audioNodesRef.current.analyzer.disconnect();
+      }
+      
+      // Only close if not already closed
+      if (audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(console.error);
+      }
       audioContextRef.current = null;
     }
     
@@ -104,8 +135,21 @@ const AudioRecorder: React.FC = () => {
         }
       }
       
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(console.error);
+      // Safely close AudioContext if it exists and isn't already closed
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        try {
+          // Disconnect any nodes first to prevent memory leaks
+          if (audioNodesRef.current.source) {
+            audioNodesRef.current.source.disconnect();
+          }
+          if (audioNodesRef.current.analyzer) {
+            audioNodesRef.current.analyzer.disconnect();
+          }
+          
+          audioContextRef.current.close();
+        } catch (e) {
+          console.error("Error closing AudioContext:", e);
+        }
       }
       
       stopListening();

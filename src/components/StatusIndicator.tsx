@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 
 const StatusIndicator: React.FC = () => {
   const { user } = useAuth();
-  const userId = user?.phone_number || "";
+  const userId = user?.id ? String(user.id) : user?.phone_number || "";
   const { isConnected, isListening } = useVoiceAssistant(userId);
 
   if (!isConnected && !isListening) return null;
