@@ -1,10 +1,10 @@
-
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Loader } from "lucide-react";
 import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { Card } from "@/components/ui/card";
 
 const AudioRecorder: React.FC = () => {
   const { user } = useAuth();
@@ -15,6 +15,7 @@ const AudioRecorder: React.FC = () => {
   const { toast } = useToast();
   
   const [isRecording, setIsRecording] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -31,7 +32,9 @@ const AudioRecorder: React.FC = () => {
     isListening, 
     isPlaying,
     startListening, 
-    stopListening 
+    stopListening,
+    micLevel,
+    logs
   } = useVoiceAssistant(userId);
 
   console.log("[AudioRecorder] Current state:", { isRecording, isConnected, isListening, isPlaying });
@@ -121,19 +124,6 @@ const AudioRecorder: React.FC = () => {
         const dataArray = new Float32Array(bufferSize);
         if (audioNodesRef.current.analyzer) {
           audioNodesRef.current.analyzer.getFloatTimeDomainData(dataArray);
-          
-          // Log only occasionally to avoid console flooding
-          if (Math.random() < 0.05) {  // Log roughly 5% of the time
-            console.log(`[AudioRecorder] Got audio data, sample values: ${dataArray[0].toFixed(3)}, ${dataArray[1].toFixed(3)}...`);
-            
-            // Calculate audio level for debugging
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-              sum += Math.abs(dataArray[i]);
-            }
-            const average = sum / dataArray.length;
-            console.log(`[AudioRecorder] Average audio level: ${average.toFixed(5)}`);
-          }
           
           // Resample to 16kHz and convert to Int16 before sending
           if (audioContextRef.current) {
@@ -356,6 +346,13 @@ const AudioRecorder: React.FC = () => {
     }
   };
 
+  // Get mic bar color based on level
+  const getMicBarColor = (level: number) => {
+    if (level > 80) return "bg-red-500";
+    if (level > 40) return "bg-orange-500";
+    return "bg-green-500";
+  };
+
   return (
     <div className="flex flex-col items-center">
       <div className="relative mb-4">
@@ -380,6 +377,16 @@ const AudioRecorder: React.FC = () => {
         )}
       </div>
       
+      {/* Microphone level indicator */}
+      {isRecording && (
+        <div className="w-full h-3 bg-secondary rounded-full overflow-hidden mb-4">
+          <div 
+            className={`h-full ${getMicBarColor(micLevel)} transition-all duration-100`}
+            style={{ width: `${micLevel}%` }}
+          />
+        </div>
+      )}
+      
       <div className="text-sm text-muted-foreground">
         {isRecording ? (
           isConnected ? "Listening..." : "Connecting..."
@@ -392,6 +399,25 @@ const AudioRecorder: React.FC = () => {
         <div className="mt-2 text-sm font-medium text-primary animate-pulse">
           Assistant is speaking...
         </div>
+      )}
+
+      {/* Debug logs toggle button */}
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={() => setShowLogs(!showLogs)}
+        className="mt-4"
+      >
+        {showLogs ? "Hide Logs" : "Show Logs"}
+      </Button>
+
+      {/* Debug logs */}
+      {showLogs && logs.length > 0 && (
+        <Card className="w-full mt-4 max-h-80 overflow-y-auto p-4 bg-black text-green-500 font-mono text-xs">
+          {logs.map((log, i) => (
+            <div key={i} className="whitespace-pre-wrap">{log}</div>
+          ))}
+        </Card>
       )}
     </div>
   );

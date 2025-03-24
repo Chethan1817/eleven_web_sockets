@@ -7,12 +7,60 @@ export function useVoiceAssistant(userId: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [logs, setLogs] = useState<string[]>([]);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 3;
+  const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const { toast } = useToast();
 
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
   console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
+
+  // Helper function to log messages
+  const addLog = (message: string) => {
+    console.log(`[useVoiceAssistant] ${message}`);
+    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
+  };
+
+  // Function to enqueue audio and start playback if not already playing
+  const enqueueAudio = (buffer: ArrayBuffer) => {
+    addLog(`Enqueuing ${buffer.byteLength} bytes of audio`);
+    audioQueueRef.current.push(buffer);
+    if (!isPlaying) {
+      playNextInQueue();
+    }
+  };
+
+  // Function to play the next audio in the queue
+  const playNextInQueue = async () => {
+    if (audioQueueRef.current.length === 0) {
+      setIsPlaying(false);
+      return;
+    }
+
+    setIsPlaying(true);
+    const buffer = audioQueueRef.current.shift();
+    
+    if (!buffer) {
+      setIsPlaying(false);
+      return;
+    }
+
+    addLog(`🔊 Playing ${buffer.byteLength} bytes of audio`);
+    
+    try {
+      await playPcmAudio(buffer);
+      
+      // Add a delay between audio responses
+      setTimeout(() => {
+        playNextInQueue();
+      }, 500);
+    } catch (error) {
+      console.error("[useVoiceAssistant] Error playing audio:", error);
+      setIsPlaying(false);
+    }
+  };
 
   useEffect(() => {
     if (!isListening) {
@@ -21,26 +69,23 @@ export function useVoiceAssistant(userId: string) {
     }
 
     const wsUrl = `ws://localhost:8000/ws/audio/?user_id=${userId}`;
-    console.log("[useVoiceAssistant] Connecting to WebSocket:", wsUrl);
-    console.log("[useVoiceAssistant] Reconnect attempt:", reconnectAttemptsRef.current);
+    addLog(`Connecting to WebSocket: ${wsUrl}`);
     
     try {
       const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
       ws.binaryType = "arraybuffer";
-      console.log("[useVoiceAssistant] Set WebSocket binaryType to arraybuffer");
+      addLog("Set WebSocket binaryType to arraybuffer");
 
       ws.onopen = () => {
-        console.log("[useVoiceAssistant] ✅ WebSocket connected successfully");
-        console.log("[useVoiceAssistant] WebSocket readyState:", ws.readyState);
+        addLog("✅ WebSocket connected successfully");
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
         toast({
           title: "Connected to voice assistant",
           description: "You can now speak to the assistant",
         });
-        console.log("[useVoiceAssistant] Connection toast displayed");
       };
 
       ws.onmessage = (event) => {
@@ -48,33 +93,13 @@ export function useVoiceAssistant(userId: string) {
           const byteLength = event.data.byteLength;
           console.log(`[useVoiceAssistant] Received binary data: ${byteLength} bytes`);
           
-          if (byteLength < 10000) {
-            const view = new DataView(event.data);
-            const firstBytes = [];
-            for (let i = 0; i < Math.min(8, byteLength); i += 2) {
-              if (i < byteLength) {
-                firstBytes.push(view.getInt16(i, true));
-              }
-            }
-            console.log(`[useVoiceAssistant] Audio data samples: ${firstBytes.join(', ')}...`);
-          }
-          
-          setIsPlaying(true);
-          console.log("[useVoiceAssistant] Starting audio playback");
-          
-          // Play PCM audio data
-          playPcmAudio(event.data).then(() => {
-            console.log("[useVoiceAssistant] Audio playback ended");
-            setIsPlaying(false);
-          }).catch(error => {
-            console.error("[useVoiceAssistant] Failed to play PCM audio:", error);
-            setIsPlaying(false);
-          });
+          // Enqueue audio for playback
+          enqueueAudio(event.data);
         } else {
           console.log("[useVoiceAssistant] Received text message:", event.data);
           try {
             const message = JSON.parse(event.data);
-            console.log("[useVoiceAssistant] ℹ️ Parsed JSON message:", message);
+            addLog(`📩 ${message.type}: ${message.text || message.status || message.message || JSON.stringify(message)}`);
             
             if (message.type === "error") {
               console.warn("[useVoiceAssistant] Error message received:", message.message);
@@ -83,37 +108,29 @@ export function useVoiceAssistant(userId: string) {
                 description: message.message,
                 variant: "destructive",
               });
-              console.log("[useVoiceAssistant] Error toast displayed");
             } else if (message.type === "status") {
               console.log("[useVoiceAssistant] Status message:", message.status);
             }
           } catch (e) {
+            addLog(`📩 Text: ${event.data}`);
             console.error("[useVoiceAssistant] Failed to parse JSON message:", e, "Raw message:", event.data);
           }
         }
       };
 
       ws.onerror = (err) => {
+        addLog("❌ WebSocket error");
         console.error("[useVoiceAssistant] ❌ WebSocket error:", err);
-        console.log("[useVoiceAssistant] WebSocket readyState:", ws.readyState);
-        
-        console.log("[useVoiceAssistant] Error details:", {
-          type: err.type,
-          bubbles: err.bubbles,
-          cancelable: err.cancelable
-        });
         
         toast({
           title: "Connection Error",
           description: "Failed to connect to voice assistant. Please try again.",
           variant: "destructive",
         });
-        console.log("[useVoiceAssistant] Error toast displayed");
       };
       
       ws.onclose = (event) => {
-        console.warn("[useVoiceAssistant] 🔌 WebSocket closed with code:", event.code, "reason:", event.reason);
-        console.log("[useVoiceAssistant] WebSocket was clean:", event.wasClean);
+        addLog(`🔌 WebSocket closed (code ${event.code})`);
         setIsConnected(false);
         
         if (isListening && !event.wasClean && reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -125,12 +142,10 @@ export function useVoiceAssistant(userId: string) {
             }
           }, 1000);
         } else if (isListening) {
-          console.log("[useVoiceAssistant] Notifying user about disconnection");
           toast({
             title: "Disconnected",
             description: "Connection to voice assistant closed",
           });
-          console.log("[useVoiceAssistant] Disconnection toast displayed");
         }
       };
     } catch (error) {
@@ -146,22 +161,20 @@ export function useVoiceAssistant(userId: string) {
       console.log("[useVoiceAssistant] Cleaning up WebSocket connection");
       if (socketRef.current) {
         const readyState = socketRef.current.readyState;
-        console.log("[useVoiceAssistant] Current WebSocket readyState:", readyState);
         
         if (readyState !== WebSocket.CLOSED && readyState !== WebSocket.CLOSING) {
-          console.log("[useVoiceAssistant] Closing WebSocket connection");
           try {
             socketRef.current.close();
-            console.log("[useVoiceAssistant] WebSocket connection closed");
           } catch (error) {
             console.error("[useVoiceAssistant] Error closing WebSocket:", error);
           }
-        } else {
-          console.log("[useVoiceAssistant] WebSocket already closed or closing, skipping close call");
         }
       }
       setIsConnected(false);
-      console.log("[useVoiceAssistant] Set isConnected to false");
+      
+      // Clear audio queue on cleanup
+      audioQueueRef.current = [];
+      setIsPlaying(false);
     };
   }, [userId, isListening, toast]);
 
@@ -170,13 +183,11 @@ export function useVoiceAssistant(userId: string) {
     return new Promise((resolve, reject) => {
       try {
         const audioCtx = new AudioContext({ sampleRate: 16000 });
-        console.log("[useVoiceAssistant] Created AudioContext for playback with sample rate:", audioCtx.sampleRate);
 
         const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 16000);
         const channel = audioBuffer.getChannelData(0);
         const view = new DataView(pcmData);
 
-        console.log("[useVoiceAssistant] Converting Int16 PCM to Float32 for playback, buffer length:", channel.length);
         for (let i = 0; i < channel.length; i++) {
           const int16 = view.getInt16(i * 2, true);
           channel[i] = int16 / 0x8000;
@@ -187,15 +198,12 @@ export function useVoiceAssistant(userId: string) {
         source.connect(audioCtx.destination);
         
         source.onended = () => {
-          console.log("[useVoiceAssistant] AudioBufferSourceNode playback ended");
           audioCtx.close().then(() => {
-            console.log("[useVoiceAssistant] AudioContext closed after playback");
             resolve();
           });
         };
         
         source.start();
-        console.log("[useVoiceAssistant] Started PCM audio playback");
       } catch (error) {
         console.error("[useVoiceAssistant] Error playing PCM audio:", error);
         reject(error);
@@ -203,76 +211,74 @@ export function useVoiceAssistant(userId: string) {
     });
   };
 
+  // Function to check if the user is speaking while audio is playing
+  const checkUserSpeaking = (volume: number) => {
+    const threshold = 0.05; // Adjust as needed
+    if (volume > threshold && isPlaying) {
+      addLog("🛑 User spoke — interrupting playback.");
+      audioQueueRef.current = [];
+      setIsPlaying(false);
+    }
+  };
+
   const startListening = () => {
-    console.log("[useVoiceAssistant] Starting to listen");
+    addLog("Starting voice assistant session");
     reconnectAttemptsRef.current = 0;
+    audioQueueRef.current = [];
+    setIsPlaying(false);
     setIsListening(true);
+    setLogs([]);
   };
 
   const stopListening = () => {
-    console.log("[useVoiceAssistant] Stopping listening");
+    addLog("Stopping voice assistant session");
     setIsListening(false);
+    audioQueueRef.current = [];
+    setIsPlaying(false);
+    
     if (socketRef.current) {
       const readyState = socketRef.current.readyState;
-      console.log("[useVoiceAssistant] WebSocket readyState on stopListening:", readyState);
       
       if (readyState !== WebSocket.CLOSED && readyState !== WebSocket.CLOSING) {
-        console.log("[useVoiceAssistant] Closing WebSocket connection on stopListening");
         try {
           socketRef.current.close();
-          console.log("[useVoiceAssistant] WebSocket connection closed");
         } catch (error) {
           console.error("[useVoiceAssistant] Error closing WebSocket:", error);
         }
-      } else {
-        console.log("[useVoiceAssistant] WebSocket already closed or closing on stopListening");
       }
       
       socketRef.current = null;
-      console.log("[useVoiceAssistant] WebSocket reference cleared");
-    } else {
-      console.log("[useVoiceAssistant] No WebSocket to close on stopListening");
     }
   };
 
   const sendAudioChunk = (pcmChunk: ArrayBuffer) => {
     if (!socketRef.current) {
-      console.warn("[useVoiceAssistant] Cannot send audio chunk: socket is null");
       return;
     }
     
     const readyState = socketRef.current.readyState;
     if (readyState === WebSocket.OPEN) {
       const chunkSize = pcmChunk.byteLength;
-      console.log(`[useVoiceAssistant] Sending audio chunk: ${chunkSize} bytes`);
       
-      if (chunkSize > 0) {
-        const view = new DataView(pcmChunk);
-        const firstBytes = [];
-        for (let i = 0; i < Math.min(8, chunkSize); i += 2) {
-          if (i < chunkSize) {
-            firstBytes.push(view.getInt16(i, true));
-          }
-        }
-        console.log(`[useVoiceAssistant] Audio chunk samples: ${firstBytes.join(', ')}...`);
+      // Calculate volume for the audio chunk
+      const view = new DataView(pcmChunk);
+      let sum = 0;
+      for (let i = 0; i < chunkSize / 2; i++) {
+        const int16 = view.getInt16(i * 2, true);
+        sum += Math.abs(int16) / 0x8000;
       }
+      const volume = sum / (chunkSize / 2);
       
+      // Update mic level for UI and check if user is speaking during playback
+      setMicLevel(Math.min(volume * 300, 100));
+      checkUserSpeaking(volume);
+      
+      // Send the audio chunk to the server
       try {
         socketRef.current.send(pcmChunk);
-        console.log("[useVoiceAssistant] Audio chunk sent successfully");
       } catch (error) {
         console.error("[useVoiceAssistant] Error sending audio chunk:", error);
       }
-    } else {
-      console.warn(`[useVoiceAssistant] Cannot send audio chunk: socket readyState is ${readyState}`);
-      
-      const readyStateMap = {
-        [WebSocket.CONNECTING]: "CONNECTING",
-        [WebSocket.OPEN]: "OPEN",
-        [WebSocket.CLOSING]: "CLOSING",
-        [WebSocket.CLOSED]: "CLOSED"
-      };
-      console.warn(`[useVoiceAssistant] Current WebSocket state: ${readyStateMap[readyState] || "UNKNOWN"}`);
     }
   };
 
@@ -282,6 +288,8 @@ export function useVoiceAssistant(userId: string) {
     isListening, 
     isPlaying, 
     startListening, 
-    stopListening 
+    stopListening,
+    micLevel,
+    logs
   };
 }
