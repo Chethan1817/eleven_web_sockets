@@ -5,14 +5,14 @@ import { Button } from "@/components/ui/button";
 import AudioRecorder from "@/components/AudioRecorder";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import StatusIndicator from "@/components/StatusIndicator";
-import { Sparkles, UserCircle, LogOut } from "lucide-react";
+import { Sparkles, UserCircle, LogOut, Info } from "lucide-react";
 
 const Home: React.FC = () => {
   const { user, logout } = useAuth();
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-secondary/50">
-      <div className="container max-w-5xl mx-auto py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
+      <div className="container max-w-4xl mx-auto py-8 px-4">
         <div className="flex flex-col space-y-6">
           {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-center mb-2">
@@ -34,7 +34,7 @@ const Home: React.FC = () => {
           
           {/* User Profile Section */}
           {user && (
-            <Card className="w-full overflow-hidden border border-border/40 bg-card/80 backdrop-blur-sm">
+            <Card className="w-full overflow-hidden border border-border/40 bg-card/95 backdrop-blur-sm shadow-sm">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-3">
                   <div className="rounded-full bg-primary/10 p-2">
@@ -50,7 +50,7 @@ const Home: React.FC = () => {
           )}
           
           {/* Voice Assistant Section */}
-          <Card className="w-full border border-border/40 bg-card/80 backdrop-blur-sm shadow-md">
+          <Card className="w-full border border-border/40 bg-card/95 backdrop-blur-sm shadow-md">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2">
                 <span>Voice Assistant</span>
@@ -67,9 +67,12 @@ const Home: React.FC = () => {
           
           {/* Features Section */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="border border-border/40 bg-card/80 backdrop-blur-sm">
+            <Card className="border border-border/40 bg-card/95 backdrop-blur-sm hover:shadow-md transition-all">
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Voice Commands</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Info className="h-4 w-4 text-primary" />
+                  Voice Commands
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
@@ -78,9 +81,12 @@ const Home: React.FC = () => {
               </CardContent>
             </Card>
             
-            <Card className="border border-border/40 bg-card/80 backdrop-blur-sm">
+            <Card className="border border-border/40 bg-card/95 backdrop-blur-sm hover:shadow-md transition-all">
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Smart Responses</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Info className="h-4 w-4 text-primary" />
+                  Smart Responses
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
@@ -89,9 +95,12 @@ const Home: React.FC = () => {
               </CardContent>
             </Card>
             
-            <Card className="border border-border/40 bg-card/80 backdrop-blur-sm">
+            <Card className="border border-border/40 bg-card/95 backdrop-blur-sm hover:shadow-md transition-all">
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Always Learning</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Info className="h-4 w-4 text-primary" />
+                  Always Learning
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">

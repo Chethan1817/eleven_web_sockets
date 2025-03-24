@@ -20,6 +20,7 @@ export function useVoiceAssistant(userId: string) {
   const audioSentRef = useRef(false);
   const isAudioProcessingRef = useRef(false);
   const { toast } = useToast();
+  const lastAudioSentTimeRef = useRef(Date.now());
 
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
   console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
@@ -197,12 +198,17 @@ export function useVoiceAssistant(userId: string) {
       setMicLevel(Math.min(volume * 300, 100));
       checkUserSpeaking(volume);
       
-      // Only send audio if volume is above threshold
-      if (volume > 0.01 || !audioSentRef.current) {
+      // Force send audio at least every 5 seconds even if below threshold
+      const now = Date.now();
+      const shouldForceSend = now - lastAudioSentTimeRef.current > 5000;
+      
+      // Only send audio if volume is above threshold or forced send
+      if (volume > 0.01 || !audioSentRef.current || shouldForceSend) {
         try {
           socketRef.current.send(pcmChunk);
           console.log(`[useVoiceAssistant] Sent ${chunkSize} bytes of audio data, volume: ${volume.toFixed(3)}`);
           audioSentRef.current = true;
+          lastAudioSentTimeRef.current = now;
         } catch (error) {
           console.error("[useVoiceAssistant] Error sending audio chunk:", error);
         }
@@ -249,6 +255,7 @@ export function useVoiceAssistant(userId: string) {
         reconnectAttemptsRef.current = 0;
         globalHasConnected = true;
         audioSentRef.current = false; // Reset on new connection
+        lastAudioSentTimeRef.current = Date.now();
         
         toast({
           title: "Connected to voice assistant",

@@ -33,6 +33,7 @@ const AudioRecorder: React.FC = () => {
   const cleanupInProgressRef = useRef(false);
   const isProcessingRef = useRef(false);
   const processorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const forceSendTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { 
     sendAudioChunk, 
@@ -76,6 +77,36 @@ const AudioRecorder: React.FC = () => {
     
     console.log("[AudioRecorder] Converted to Int16 PCM, first few samples:", int16.slice(0, 5));
     return int16;
+  };
+
+  // Force send some audio every few seconds to maintain connection
+  const setupForceSendAudio = () => {
+    if (forceSendTimeoutRef.current) {
+      clearInterval(forceSendTimeoutRef.current);
+    }
+    
+    // Send audio every 2 seconds even if there's no speech
+    forceSendTimeoutRef.current = setInterval(() => {
+      if (isRecording && isConnected && audioNodesRef.current.analyzer) {
+        const analyzer = audioNodesRef.current.analyzer;
+        const bufferLength = analyzer.fftSize;
+        const dataArray = new Float32Array(bufferLength);
+        
+        if (audioContextRef.current) {
+          analyzer.getFloatTimeDomainData(dataArray);
+          
+          // Force send the audio data
+          resampleTo16kHz(dataArray, audioContextRef.current.sampleRate)
+            .then((int16Data) => {
+              console.log(`[AudioRecorder] Forcing sending audio chunk: ${int16Data.buffer.byteLength} bytes`);
+              sendAudioChunk(int16Data.buffer);
+            })
+            .catch((error) => {
+              console.error("[AudioRecorder] Error forcing audio send:", error);
+            });
+        }
+      }
+    }, 2000);
   };
 
   // Function to update audio visualization
@@ -148,8 +179,8 @@ const AudioRecorder: React.FC = () => {
       animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
       
       // Add ScriptProcessorNode for direct audio processing
-      // Use 4096 for better balance of processing overhead vs. latency
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      // Use smaller buffer size (1024 instead of 4096) for reduced latency
+      const processor = audioContext.createScriptProcessor(1024, 1, 1);
       audioNodesRef.current.processor = processor;
       console.log("[AudioRecorder] Created ScriptProcessor with buffer size:", processor.bufferSize);
       
@@ -211,7 +242,10 @@ const AudioRecorder: React.FC = () => {
               });
           }
         }
-      }, 500); // Check every 500ms
+      }, 300); // Check more frequently for audio to send
+      
+      // Setup force send audio timer
+      setupForceSendAudio();
       
       // Also keep MediaRecorder as backup
       console.log("[AudioRecorder] Creating MediaRecorder");
@@ -271,6 +305,13 @@ const AudioRecorder: React.FC = () => {
       clearInterval(processorTimeoutRef.current);
       processorTimeoutRef.current = null;
       console.log("[AudioRecorder] Cleared processor interval");
+    }
+    
+    // Clear the force send interval
+    if (forceSendTimeoutRef.current) {
+      clearInterval(forceSendTimeoutRef.current);
+      forceSendTimeoutRef.current = null;
+      console.log("[AudioRecorder] Cleared force send interval");
     }
     
     // Stop MediaRecorder if it exists
@@ -400,6 +441,13 @@ const AudioRecorder: React.FC = () => {
         clearInterval(processorTimeoutRef.current);
         processorTimeoutRef.current = null;
         console.log("[AudioRecorder] Cleanup: Cleared processor interval");
+      }
+      
+      // Clear the force send interval
+      if (forceSendTimeoutRef.current) {
+        clearInterval(forceSendTimeoutRef.current);
+        forceSendTimeoutRef.current = null;
+        console.log("[AudioRecorder] Cleanup: Cleared force send interval");
       }
       
       if (mediaRecorderRef.current) {
