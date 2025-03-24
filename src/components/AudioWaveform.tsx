@@ -39,16 +39,16 @@ const AudioWaveform: React.FC<AudioWaveformProps> = ({
     let gradient;
     if (isPlaying) {
       gradient = ctx.createLinearGradient(0, 0, width, 0);
-      gradient.addColorStop(0, 'hsl(var(--primary) / 0.7)');
-      gradient.addColorStop(1, 'hsl(var(--primary) / 0.3)');
+      gradient.addColorStop(0, 'rgba(0, 112, 243, 0.7)'); // primary color
+      gradient.addColorStop(1, 'rgba(0, 112, 243, 0.3)'); // primary with lower opacity
     } else if (isRecording) {
       gradient = ctx.createLinearGradient(0, 0, width, 0);
-      gradient.addColorStop(0, 'hsl(var(--destructive) / 0.5)');
-      gradient.addColorStop(1, 'hsl(var(--destructive) / 0.3)');
+      gradient.addColorStop(0, 'rgba(239, 68, 68, 0.5)'); // destructive color
+      gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)'); // destructive with lower opacity
     } else {
       gradient = ctx.createLinearGradient(0, 0, width, 0);
-      gradient.addColorStop(0, 'hsl(var(--muted-foreground) / 0.4)');
-      gradient.addColorStop(1, 'hsl(var(--muted-foreground) / 0.2)');
+      gradient.addColorStop(0, 'rgba(113, 113, 122, 0.4)'); // muted foreground color
+      gradient.addColorStop(1, 'rgba(113, 113, 122, 0.2)'); // muted foreground with lower opacity
     }
     
     ctx.fillStyle = gradient;
