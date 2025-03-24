@@ -36,6 +36,15 @@ const StatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
         </div>
       )}
       
+      {isListening && !isPlaying && (
+        <div className="ml-2 flex items-center">
+          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="ml-2 text-xs text-muted-foreground">
+            Listening
+          </span>
+        </div>
+      )}
+      
       <span className="text-xs text-muted-foreground ml-2">
         {userId ? `User: ${userId}` : "No User ID"}
       </span>

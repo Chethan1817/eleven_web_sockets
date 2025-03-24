@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -154,6 +155,7 @@ export function useVoiceAssistant(userId: string) {
 
   const sendAudioChunk = useCallback((pcmChunk: ArrayBuffer) => {
     if (!socketRef.current) {
+      console.log("[useVoiceAssistant] No socket reference available to send audio");
       return;
     }
     
@@ -177,9 +179,12 @@ export function useVoiceAssistant(userId: string) {
       // Send the audio chunk to the server
       try {
         socketRef.current.send(pcmChunk);
+        console.log(`[useVoiceAssistant] Sent ${chunkSize} bytes of audio data`);
       } catch (error) {
         console.error("[useVoiceAssistant] Error sending audio chunk:", error);
       }
+    } else {
+      console.log(`[useVoiceAssistant] Cannot send audio - WebSocket state: ${readyState}`);
     }
   }, [checkUserSpeaking]);
 

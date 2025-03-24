@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Loader } from "lucide-react";
@@ -22,11 +21,13 @@ const AudioRecorder: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioNodesRef = useRef<{
     source?: MediaStreamAudioSourceNode,
-    analyzer?: AnalyserNode
+    analyzer?: AnalyserNode,
+    processor?: ScriptProcessorNode
   }>({});
   const animationFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const cleanupInProgressRef = useRef(false);
+  const isProcessingRef = useRef(false);
   
   const { 
     sendAudioChunk, 
@@ -80,7 +81,8 @@ const AudioRecorder: React.FC = () => {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          sampleRate: 44100
         } 
       });
       console.log("[AudioRecorder] Microphone access granted:", stream);
@@ -113,40 +115,41 @@ const AudioRecorder: React.FC = () => {
       source.connect(analyzer);
       console.log("[AudioRecorder] Connected source to analyzer");
       
-      // Use a smaller buffer size and process audio
-      const bufferSize = 4096;
-      console.log("[AudioRecorder] Setting up audio processing with buffer size:", bufferSize);
+      // Add ScriptProcessorNode for direct audio processing
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      audioNodesRef.current.processor = processor;
+      console.log("[AudioRecorder] Created ScriptProcessor with buffer size:", processor.bufferSize);
       
-      const processAudio = () => {
-        if (!isRecording || !audioContextRef.current) {
-          console.log("[AudioRecorder] Audio processing stopped: recording inactive or context null");
-          return;
-        }
+      // Connect analyzer to processor to destination (required for ScriptProcessor to work)
+      analyzer.connect(processor);
+      processor.connect(audioContext.destination);
+      
+      console.log("[AudioRecorder] Connected audio processing chain");
+      
+      // Process audio data directly from ScriptProcessor
+      processor.onaudioprocess = async (event) => {
+        if (!isRecording || !isConnected || isProcessingRef.current) return;
         
-        const dataArray = new Float32Array(bufferSize);
-        if (audioNodesRef.current.analyzer) {
-          audioNodesRef.current.analyzer.getFloatTimeDomainData(dataArray);
-          
-          // Resample to 16kHz and convert to Int16 before sending
+        isProcessingRef.current = true;
+        const inputData = event.inputBuffer.getChannelData(0);
+        
+        // Clone the data since it's from a live buffer
+        const audioData = new Float32Array(inputData.length);
+        audioData.set(inputData);
+        
+        // Resample and send
+        try {
           if (audioContextRef.current) {
-            resampleTo16kHz(dataArray, audioContextRef.current.sampleRate).then(int16 => {
-              console.log(`[AudioRecorder] Sending resampled audio chunk: ${int16.buffer.byteLength} bytes`);
-              sendAudioChunk(int16.buffer);
-            }).catch(error => {
-              console.error("[AudioRecorder] Error resampling audio:", error);
-            });
+            const int16Data = await resampleTo16kHz(audioData, audioContextRef.current.sampleRate);
+            console.log(`[AudioRecorder] Sending audio chunk: ${int16Data.buffer.byteLength} bytes`);
+            sendAudioChunk(int16Data.buffer);
           }
-        } else {
-          console.warn("[AudioRecorder] Analyzer node is unavailable");
+        } catch (error) {
+          console.error("[AudioRecorder] Error processing audio:", error);
         }
         
-        // Schedule next processing
-        animationFrameRef.current = requestAnimationFrame(processAudio);
+        isProcessingRef.current = false;
       };
-      
-      // Start processing audio frames
-      animationFrameRef.current = requestAnimationFrame(processAudio);
-      console.log("[AudioRecorder] Started audio processing loop");
       
       // Also keep MediaRecorder as backup
       console.log("[AudioRecorder] Creating MediaRecorder");
@@ -414,7 +417,9 @@ const AudioRecorder: React.FC = () => {
       
       <div className="text-sm text-muted-foreground">
         {isRecording ? (
-          isConnected ? "Listening..." : "Connecting..."
+          isConnected ? (
+            isPlaying ? "Assistant is speaking..." : "Listening..."
+          ) : "Connecting..."
         ) : (
           "Tap to speak"
         )}
