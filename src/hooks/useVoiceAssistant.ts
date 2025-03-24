@@ -17,6 +17,8 @@ export function useVoiceAssistant(userId: string) {
   const maxReconnectAttempts = 3;
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const hasStartedRef = useRef(false);
+  const audioSentRef = useRef(false);
+  const isAudioProcessingRef = useRef(false);
   const { toast } = useToast();
 
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
@@ -77,6 +79,7 @@ export function useVoiceAssistant(userId: string) {
     addLog("Starting voice assistant session");
     reconnectAttemptsRef.current = 0;
     audioQueueRef.current = [];
+    audioSentRef.current = false;
     setIsPlaying(false);
     setIsListening(true);
     setLogs([]);
@@ -89,6 +92,7 @@ export function useVoiceAssistant(userId: string) {
     audioQueueRef.current = [];
     setIsPlaying(false);
     hasStartedRef.current = false;
+    audioSentRef.current = false;
     
     if (socketRef.current) {
       const readyState = socketRef.current.readyState;
@@ -113,6 +117,8 @@ export function useVoiceAssistant(userId: string) {
   // Function to check if the user is speaking while audio is playing
   const checkUserSpeaking = useCallback((volume: number) => {
     const threshold = 0.05; // Adjust as needed
+    setMicLevel(Math.min(volume * 300, 100));
+    
     if (volume > threshold && isPlaying) {
       addLog("🛑 User spoke — interrupting playback.");
       audioQueueRef.current = [];
@@ -159,33 +165,55 @@ export function useVoiceAssistant(userId: string) {
       return;
     }
     
+    if (isAudioProcessingRef.current) {
+      console.log("[useVoiceAssistant] Audio processing in progress, skipping");
+      return;
+    }
+    
+    isAudioProcessingRef.current = true;
     const readyState = socketRef.current.readyState;
+    
     if (readyState === WebSocket.OPEN) {
       const chunkSize = pcmChunk.byteLength;
       
       // Calculate volume for the audio chunk
       const view = new DataView(pcmChunk);
       let sum = 0;
+      let nonZeroSamples = 0;
+      
       for (let i = 0; i < chunkSize / 2; i++) {
         const int16 = view.getInt16(i * 2, true);
-        sum += Math.abs(int16) / 0x8000;
+        const normalized = Math.abs(int16) / 0x8000;
+        
+        if (normalized > 0.01) { // Ignore near-silent samples
+          sum += normalized;
+          nonZeroSamples++;
+        }
       }
-      const volume = sum / (chunkSize / 2);
+      
+      const volume = nonZeroSamples > 0 ? sum / nonZeroSamples : 0;
       
       // Update mic level for UI and check if user is speaking during playback
       setMicLevel(Math.min(volume * 300, 100));
       checkUserSpeaking(volume);
       
-      // Send the audio chunk to the server
-      try {
-        socketRef.current.send(pcmChunk);
-        console.log(`[useVoiceAssistant] Sent ${chunkSize} bytes of audio data`);
-      } catch (error) {
-        console.error("[useVoiceAssistant] Error sending audio chunk:", error);
+      // Only send audio if volume is above threshold
+      if (volume > 0.01 || !audioSentRef.current) {
+        try {
+          socketRef.current.send(pcmChunk);
+          console.log(`[useVoiceAssistant] Sent ${chunkSize} bytes of audio data, volume: ${volume.toFixed(3)}`);
+          audioSentRef.current = true;
+        } catch (error) {
+          console.error("[useVoiceAssistant] Error sending audio chunk:", error);
+        }
+      } else {
+        console.log(`[useVoiceAssistant] Audio below threshold (${volume.toFixed(3)}), not sending`);
       }
     } else {
       console.log(`[useVoiceAssistant] Cannot send audio - WebSocket state: ${readyState}`);
     }
+    
+    isAudioProcessingRef.current = false;
   }, [checkUserSpeaking]);
 
   useEffect(() => {
@@ -220,6 +248,7 @@ export function useVoiceAssistant(userId: string) {
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
         globalHasConnected = true;
+        audioSentRef.current = false; // Reset on new connection
         
         toast({
           title: "Connected to voice assistant",

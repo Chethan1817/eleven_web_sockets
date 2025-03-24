@@ -5,6 +5,7 @@ import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
+import StatusIndicator from "@/components/StatusIndicator";
 
 const AudioRecorder: React.FC = () => {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ const AudioRecorder: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const cleanupInProgressRef = useRef(false);
   const isProcessingRef = useRef(false);
+  const processorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { 
     sendAudioChunk, 
@@ -116,6 +118,7 @@ const AudioRecorder: React.FC = () => {
       console.log("[AudioRecorder] Connected source to analyzer");
       
       // Add ScriptProcessorNode for direct audio processing
+      // Use 4096 for better balance of processing overhead vs. latency
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       audioNodesRef.current.processor = processor;
       console.log("[AudioRecorder] Created ScriptProcessor with buffer size:", processor.bufferSize);
@@ -150,6 +153,35 @@ const AudioRecorder: React.FC = () => {
         
         isProcessingRef.current = false;
       };
+      
+      // Set up periodic sending to ensure audio continues to be sent
+      // This helps in case the ScriptProcessor misses some callbacks
+      processorTimeoutRef.current = setInterval(() => {
+        if (isConnected && !isProcessingRef.current && audioNodesRef.current.analyzer) {
+          const analyzer = audioNodesRef.current.analyzer;
+          const bufferLength = analyzer.fftSize;
+          const dataArray = new Float32Array(bufferLength);
+          analyzer.getFloatTimeDomainData(dataArray);
+          
+          // Only send if there's actual audio
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += Math.abs(dataArray[i]);
+          }
+          const average = sum / bufferLength;
+          
+          if (average > 0.01) {
+            resampleTo16kHz(dataArray, audioContextRef.current?.sampleRate || 44100)
+              .then((int16Data) => {
+                console.log(`[AudioRecorder] Sending periodic audio chunk: ${int16Data.buffer.byteLength} bytes (avg: ${average.toFixed(4)})`);
+                sendAudioChunk(int16Data.buffer);
+              })
+              .catch((error) => {
+                console.error("[AudioRecorder] Error sending periodic audio:", error);
+              });
+          }
+        }
+      }, 500); // Check every 500ms
       
       // Also keep MediaRecorder as backup
       console.log("[AudioRecorder] Creating MediaRecorder");
@@ -202,6 +234,13 @@ const AudioRecorder: React.FC = () => {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
       console.log("[AudioRecorder] Animation frame cancelled");
+    }
+    
+    // Clear the processor interval
+    if (processorTimeoutRef.current) {
+      clearInterval(processorTimeoutRef.current);
+      processorTimeoutRef.current = null;
+      console.log("[AudioRecorder] Cleared processor interval");
     }
     
     // Stop MediaRecorder if it exists
@@ -261,6 +300,16 @@ const AudioRecorder: React.FC = () => {
         }
       }
       
+      if (audioNodesRef.current.processor) {
+        console.log("[AudioRecorder] Disconnecting processor node");
+        try {
+          audioNodesRef.current.processor.disconnect();
+          console.log("[AudioRecorder] Processor node disconnected");
+        } catch (e) {
+          console.error("[AudioRecorder] Error disconnecting processor node:", e);
+        }
+      }
+      
       // Only close if not already closed
       if (audioContextRef.current.state !== 'closed') {
         console.log("[AudioRecorder] Closing AudioContext, current state:", audioContextRef.current.state);
@@ -316,6 +365,13 @@ const AudioRecorder: React.FC = () => {
         animationFrameRef.current = null;
       }
       
+      // Clear the processor interval
+      if (processorTimeoutRef.current) {
+        clearInterval(processorTimeoutRef.current);
+        processorTimeoutRef.current = null;
+        console.log("[AudioRecorder] Cleanup: Cleared processor interval");
+      }
+      
       if (mediaRecorderRef.current) {
         if (mediaRecorderRef.current.state !== 'inactive') {
           console.log("[AudioRecorder] Stopping active MediaRecorder");
@@ -346,6 +402,9 @@ const AudioRecorder: React.FC = () => {
           }
           if (audioNodesRef.current.analyzer) {
             audioNodesRef.current.analyzer.disconnect();
+          }
+          if (audioNodesRef.current.processor) {
+            audioNodesRef.current.processor.disconnect();
           }
           
           console.log("[AudioRecorder] Cleanup: Closing AudioContext");
@@ -383,7 +442,9 @@ const AudioRecorder: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative mb-4">
+      {isConnected && <StatusIndicator />}
+      
+      <div className="relative mb-4 mt-4">
         <Button
           onClick={toggleRecording}
           variant={isRecording ? "destructive" : "default"}

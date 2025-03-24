@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AudioRecorder from "@/components/AudioRecorder";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import StatusIndicator from "@/components/StatusIndicator";
 
 const Home: React.FC = () => {
   const { user, logout } = useAuth();
