@@ -333,9 +333,11 @@ const AudioRecorder: React.FC = () => {
       }
       
       console.log("[AudioRecorder] Cleanup: Stopping listening");
-      stopListening();
+      if (isListening) {
+        stopListening();
+      }
     };
-  }, [stopListening]);
+  }, [isListening, stopListening]);
 
   const toggleRecording = () => {
     console.log("[AudioRecorder] Toggle recording, current state:", isRecording);

@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 export function useVoiceAssistant(userId: string) {
@@ -17,23 +17,23 @@ export function useVoiceAssistant(userId: string) {
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
   console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
 
-  // Helper function to log messages
-  const addLog = (message: string) => {
+  // Helper function to log messages - modified to avoid the infinite loop
+  const addLog = useCallback((message: string) => {
     console.log(`[useVoiceAssistant] ${message}`);
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
-  };
+  }, []);
 
   // Function to enqueue audio and start playback if not already playing
-  const enqueueAudio = (buffer: ArrayBuffer) => {
+  const enqueueAudio = useCallback((buffer: ArrayBuffer) => {
     addLog(`Enqueuing ${buffer.byteLength} bytes of audio`);
     audioQueueRef.current.push(buffer);
     if (!isPlaying) {
       playNextInQueue();
     }
-  };
+  }, [isPlaying, addLog]);
 
   // Function to play the next audio in the queue
-  const playNextInQueue = async () => {
+  const playNextInQueue = useCallback(async () => {
     if (audioQueueRef.current.length === 0) {
       setIsPlaying(false);
       return;
@@ -60,7 +60,111 @@ export function useVoiceAssistant(userId: string) {
       console.error("[useVoiceAssistant] Error playing audio:", error);
       setIsPlaying(false);
     }
+  }, [addLog]);
+
+  const startListening = useCallback(() => {
+    addLog("Starting voice assistant session");
+    reconnectAttemptsRef.current = 0;
+    audioQueueRef.current = [];
+    setIsPlaying(false);
+    setIsListening(true);
+    setLogs([]);
+  }, [addLog]);
+
+  const stopListening = useCallback(() => {
+    addLog("Stopping voice assistant session");
+    setIsListening(false);
+    audioQueueRef.current = [];
+    setIsPlaying(false);
+    
+    if (socketRef.current) {
+      const readyState = socketRef.current.readyState;
+      
+      if (readyState !== WebSocket.CLOSED && readyState !== WebSocket.CLOSING) {
+        try {
+          socketRef.current.close();
+        } catch (error) {
+          console.error("[useVoiceAssistant] Error closing WebSocket:", error);
+        }
+      }
+      
+      socketRef.current = null;
+    }
+  }, [addLog]);
+
+  // Function to check if the user is speaking while audio is playing
+  const checkUserSpeaking = useCallback((volume: number) => {
+    const threshold = 0.05; // Adjust as needed
+    if (volume > threshold && isPlaying) {
+      addLog("🛑 User spoke — interrupting playback.");
+      audioQueueRef.current = [];
+      setIsPlaying(false);
+    }
+  }, [isPlaying, addLog]);
+
+  // Function to play PCM audio data
+  const playPcmAudio = async (pcmData: ArrayBuffer): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const audioCtx = new AudioContext({ sampleRate: 16000 });
+
+        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 16000);
+        const channel = audioBuffer.getChannelData(0);
+        const view = new DataView(pcmData);
+
+        for (let i = 0; i < channel.length; i++) {
+          const int16 = view.getInt16(i * 2, true);
+          channel[i] = int16 / 0x8000;
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        
+        source.onended = () => {
+          audioCtx.close().then(() => {
+            resolve();
+          });
+        };
+        
+        source.start();
+      } catch (error) {
+        console.error("[useVoiceAssistant] Error playing PCM audio:", error);
+        reject(error);
+      }
+    });
   };
+
+  const sendAudioChunk = useCallback((pcmChunk: ArrayBuffer) => {
+    if (!socketRef.current) {
+      return;
+    }
+    
+    const readyState = socketRef.current.readyState;
+    if (readyState === WebSocket.OPEN) {
+      const chunkSize = pcmChunk.byteLength;
+      
+      // Calculate volume for the audio chunk
+      const view = new DataView(pcmChunk);
+      let sum = 0;
+      for (let i = 0; i < chunkSize / 2; i++) {
+        const int16 = view.getInt16(i * 2, true);
+        sum += Math.abs(int16) / 0x8000;
+      }
+      const volume = sum / (chunkSize / 2);
+      
+      // Update mic level for UI and check if user is speaking during playback
+      setMicLevel(Math.min(volume * 300, 100));
+      checkUserSpeaking(volume);
+      
+      // Send the audio chunk to the server
+      try {
+        socketRef.current.send(pcmChunk);
+      } catch (error) {
+        console.error("[useVoiceAssistant] Error sending audio chunk:", error);
+      }
+    }
+  }, [checkUserSpeaking]);
 
   useEffect(() => {
     if (!isListening) {
@@ -176,111 +280,7 @@ export function useVoiceAssistant(userId: string) {
       audioQueueRef.current = [];
       setIsPlaying(false);
     };
-  }, [userId, isListening, toast]);
-
-  // Function to play PCM audio data
-  const playPcmAudio = async (pcmData: ArrayBuffer): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      try {
-        const audioCtx = new AudioContext({ sampleRate: 16000 });
-
-        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 16000);
-        const channel = audioBuffer.getChannelData(0);
-        const view = new DataView(pcmData);
-
-        for (let i = 0; i < channel.length; i++) {
-          const int16 = view.getInt16(i * 2, true);
-          channel[i] = int16 / 0x8000;
-        }
-
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        
-        source.onended = () => {
-          audioCtx.close().then(() => {
-            resolve();
-          });
-        };
-        
-        source.start();
-      } catch (error) {
-        console.error("[useVoiceAssistant] Error playing PCM audio:", error);
-        reject(error);
-      }
-    });
-  };
-
-  // Function to check if the user is speaking while audio is playing
-  const checkUserSpeaking = (volume: number) => {
-    const threshold = 0.05; // Adjust as needed
-    if (volume > threshold && isPlaying) {
-      addLog("🛑 User spoke — interrupting playback.");
-      audioQueueRef.current = [];
-      setIsPlaying(false);
-    }
-  };
-
-  const startListening = () => {
-    addLog("Starting voice assistant session");
-    reconnectAttemptsRef.current = 0;
-    audioQueueRef.current = [];
-    setIsPlaying(false);
-    setIsListening(true);
-    setLogs([]);
-  };
-
-  const stopListening = () => {
-    addLog("Stopping voice assistant session");
-    setIsListening(false);
-    audioQueueRef.current = [];
-    setIsPlaying(false);
-    
-    if (socketRef.current) {
-      const readyState = socketRef.current.readyState;
-      
-      if (readyState !== WebSocket.CLOSED && readyState !== WebSocket.CLOSING) {
-        try {
-          socketRef.current.close();
-        } catch (error) {
-          console.error("[useVoiceAssistant] Error closing WebSocket:", error);
-        }
-      }
-      
-      socketRef.current = null;
-    }
-  };
-
-  const sendAudioChunk = (pcmChunk: ArrayBuffer) => {
-    if (!socketRef.current) {
-      return;
-    }
-    
-    const readyState = socketRef.current.readyState;
-    if (readyState === WebSocket.OPEN) {
-      const chunkSize = pcmChunk.byteLength;
-      
-      // Calculate volume for the audio chunk
-      const view = new DataView(pcmChunk);
-      let sum = 0;
-      for (let i = 0; i < chunkSize / 2; i++) {
-        const int16 = view.getInt16(i * 2, true);
-        sum += Math.abs(int16) / 0x8000;
-      }
-      const volume = sum / (chunkSize / 2);
-      
-      // Update mic level for UI and check if user is speaking during playback
-      setMicLevel(Math.min(volume * 300, 100));
-      checkUserSpeaking(volume);
-      
-      // Send the audio chunk to the server
-      try {
-        socketRef.current.send(pcmChunk);
-      } catch (error) {
-        console.error("[useVoiceAssistant] Error sending audio chunk:", error);
-      }
-    }
-  };
+  }, [userId, isListening, toast, addLog, enqueueAudio]);
 
   return { 
     sendAudioChunk, 
