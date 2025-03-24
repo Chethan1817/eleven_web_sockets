@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Loader } from "lucide-react";
+import { Mic, MicOff, Loader, Volume2 } from "lucide-react";
 import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import StatusIndicator from "@/components/StatusIndicator";
+import AudioWaveform from "@/components/AudioWaveform";
 
 const AudioRecorder: React.FC = () => {
   const { user } = useAuth();
@@ -17,6 +18,8 @@ const AudioRecorder: React.FC = () => {
   
   const [isRecording, setIsRecording] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [audioVisualizationData, setAudioVisualizationData] = useState<Uint8Array>(new Uint8Array(50).fill(0));
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -75,6 +78,30 @@ const AudioRecorder: React.FC = () => {
     return int16;
   };
 
+  // Function to update audio visualization
+  const updateAudioVisualization = () => {
+    if (!isRecording || !audioNodesRef.current.analyzer) {
+      return;
+    }
+    
+    const analyzer = audioNodesRef.current.analyzer;
+    const bufferLength = analyzer.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    analyzer.getByteFrequencyData(dataArray);
+    
+    // Use a smaller subset of the data for visualization
+    const visualizationArray = new Uint8Array(50);
+    const step = Math.floor(bufferLength / 50);
+    
+    for (let i = 0; i < 50; i++) {
+      visualizationArray[i] = dataArray[i * step];
+    }
+    
+    setAudioVisualizationData(visualizationArray);
+    animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
+  };
+
   const startRecording = async () => {
     console.log("[AudioRecorder] Starting recording process");
     try {
@@ -116,6 +143,9 @@ const AudioRecorder: React.FC = () => {
       
       source.connect(analyzer);
       console.log("[AudioRecorder] Connected source to analyzer");
+      
+      // Start visualization
+      animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
       
       // Add ScriptProcessorNode for direct audio processing
       // Use 4096 for better balance of processing overhead vs. latency
@@ -442,62 +472,63 @@ const AudioRecorder: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center">
-      {isConnected && <StatusIndicator />}
-      
-      <div className="relative mb-4 mt-4">
-        <Button
-          onClick={toggleRecording}
-          variant={isRecording ? "destructive" : "default"}
-          size="lg"
-          className={`rounded-full h-16 w-16 flex items-center justify-center ${isPlaying ? 'animate-pulse' : ''}`}
-          disabled={isPlaying}
-        >
-          {isRecording ? <MicOff size={24} /> : <Mic size={24} />}
-        </Button>
+      <div className="w-full max-w-lg mx-auto">
+        {/* Audio Waveform Visualization */}
+        <AudioWaveform 
+          audioData={audioVisualizationData}
+          isRecording={isRecording && !isPlaying}
+          isPlaying={isPlaying}
+        />
         
-        {isConnected && (
-          <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />
-        )}
+        <div className="relative mb-4 mt-4 flex justify-center">
+          <Button
+            onClick={toggleRecording}
+            variant={isRecording ? "destructive" : "default"}
+            size="lg"
+            className={`rounded-full h-16 w-16 flex items-center justify-center ${isPlaying ? 'animate-pulse shadow-lg' : 'shadow-md'}`}
+            disabled={isPlaying}
+          >
+            {isRecording ? <MicOff size={24} /> : <Mic size={24} />}
+          </Button>
+          
+          {isConnected && (
+            <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />
+          )}
+          
+          {isListening && !isConnected && (
+            <span className="absolute -top-1 -right-1">
+              <Loader className="h-4 w-4 animate-spin text-primary" />
+            </span>
+          )}
+        </div>
         
-        {isListening && !isConnected && (
-          <span className="absolute -top-1 -right-1">
-            <Loader className="h-4 w-4 animate-spin text-primary" />
-          </span>
-        )}
-      </div>
-      
-      {/* Microphone level indicator */}
-      {isRecording && (
-        <div className="w-full h-3 bg-secondary rounded-full overflow-hidden mb-4">
-          <div 
-            className={`h-full ${getMicBarColor(micLevel)} transition-all duration-100`}
-            style={{ width: `${micLevel}%` }}
-          />
+        {/* Status indicator */}
+        <div className="text-center mb-4">
+          <div className="text-sm font-medium">
+            {isRecording ? (
+              isConnected ? (
+                isPlaying ? 
+                <div className="flex items-center justify-center gap-2 text-primary animate-pulse">
+                  <Volume2 className="h-4 w-4" />
+                  <span>Assistant is speaking...</span>
+                </div> : 
+                <div className="text-green-500">Listening...</div>
+              ) : (
+                <div className="text-amber-500">Connecting...</div>
+              )
+            ) : (
+              <div className="text-muted-foreground">Tap to speak</div>
+            )}
+          </div>
         </div>
-      )}
-      
-      <div className="text-sm text-muted-foreground">
-        {isRecording ? (
-          isConnected ? (
-            isPlaying ? "Assistant is speaking..." : "Listening..."
-          ) : "Connecting..."
-        ) : (
-          "Tap to speak"
-        )}
       </div>
-      
-      {isPlaying && (
-        <div className="mt-2 text-sm font-medium text-primary animate-pulse">
-          Assistant is speaking...
-        </div>
-      )}
 
       {/* Debug logs toggle button */}
       <Button 
         variant="ghost" 
         size="sm" 
         onClick={() => setShowLogs(!showLogs)}
-        className="mt-4"
+        className="mt-2"
       >
         {showLogs ? "Hide Logs" : "Show Logs"}
       </Button>
