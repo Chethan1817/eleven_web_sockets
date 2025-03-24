@@ -4,8 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AudioRecorder from "@/components/AudioRecorder";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import StatusIndicator from "@/components/StatusIndicator";
-import { Sparkles, UserCircle, LogOut, Info } from "lucide-react";
+import { Sparkles, UserCircle, LogOut, Info, HelpCircle } from "lucide-react";
 
 const Home: React.FC = () => {
   const { user, logout } = useAuth();
@@ -59,8 +58,53 @@ const Home: React.FC = () => {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="my-6">
-                <StatusIndicator />
                 <AudioRecorder />
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* How to Use Section */}
+          <Card className="w-full border border-border/40 bg-card/95 backdrop-blur-sm shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <HelpCircle className="h-4 w-4 text-primary" />
+                How to Use
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 rounded-full bg-primary/10 p-1 w-6 h-6 flex items-center justify-center">
+                    <span className="text-xs font-bold text-primary">1</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Tap the microphone button to start speaking with the assistant.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 rounded-full bg-primary/10 p-1 w-6 h-6 flex items-center justify-center">
+                    <span className="text-xs font-bold text-primary">2</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Speak naturally to ask questions or give commands.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 rounded-full bg-primary/10 p-1 w-6 h-6 flex items-center justify-center">
+                    <span className="text-xs font-bold text-primary">3</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Wait for the assistant to respond. You can speak again to interrupt.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 rounded-full bg-primary/10 p-1 w-6 h-6 flex items-center justify-center">
+                    <span className="text-xs font-bold text-primary">4</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Tap the microphone button again to end the conversation.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
