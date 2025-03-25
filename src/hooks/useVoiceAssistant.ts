@@ -16,6 +16,7 @@ export function useVoiceAssistant(userId: string) {
   const maxReconnectAttempts = 3;
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const hasStartedRef = useRef(false);
+  const isProcessingAudioRef = useRef(false);
   const { toast } = useToast();
 
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
@@ -31,23 +32,28 @@ export function useVoiceAssistant(userId: string) {
   const enqueueAudio = useCallback((buffer: ArrayBuffer) => {
     addLog(`Enqueuing ${buffer.byteLength} bytes of audio`);
     audioQueueRef.current.push(buffer);
-    if (!isPlaying) {
+    
+    // Only start playing if we're not already processing audio
+    if (!isProcessingAudioRef.current) {
       playNextInQueue();
     }
-  }, [isPlaying, addLog]);
+  }, [addLog]);
 
   // Function to play the next audio in the queue
   const playNextInQueue = useCallback(async () => {
     if (audioQueueRef.current.length === 0) {
       setIsPlaying(false);
+      isProcessingAudioRef.current = false;
       return;
     }
 
+    isProcessingAudioRef.current = true;
     setIsPlaying(true);
     const buffer = audioQueueRef.current.shift();
     
     if (!buffer) {
       setIsPlaying(false);
+      isProcessingAudioRef.current = false;
       return;
     }
 
@@ -56,13 +62,14 @@ export function useVoiceAssistant(userId: string) {
     try {
       await playPcmAudio(buffer);
       
-      // Add a delay between audio responses (500ms)
+      // Add a delay between audio responses (800ms)
       setTimeout(() => {
         playNextInQueue();
-      }, 500);
+      }, 800);
     } catch (error) {
       console.error("[useVoiceAssistant] Error playing audio:", error);
       setIsPlaying(false);
+      isProcessingAudioRef.current = false;
     }
   }, [addLog]);
 
@@ -118,6 +125,7 @@ export function useVoiceAssistant(userId: string) {
       addLog("🛑 User spoke — interrupting playback.");
       audioQueueRef.current = [];
       setIsPlaying(false);
+      isProcessingAudioRef.current = false;
     }
   }, [isPlaying, addLog]);
 
@@ -328,9 +336,19 @@ export function useVoiceAssistant(userId: string) {
       
       // Clear audio queue on cleanup
       audioQueueRef.current = [];
+      isProcessingAudioRef.current = false;
       setIsPlaying(false);
     };
   }, [userId, isListening, toast, addLog, enqueueAudio]);
+
+  useEffect(() => {
+    return () => {
+      // Reset audio state on cleanup
+      audioQueueRef.current = [];
+      isProcessingAudioRef.current = false;
+      setIsPlaying(false);
+    };
+  }, []);
 
   return { 
     sendAudioChunk, 
