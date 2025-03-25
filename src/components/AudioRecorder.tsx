@@ -10,9 +10,9 @@ import AudioWaveform from "@/components/AudioWaveform";
 
 const AudioRecorder: React.FC = () => {
   const { user } = useAuth();
-  console.log("[AudioRecorder] User data:", user);
+  // console.log("[AudioRecorder] User data:", user);
   const userId = user?.id ? String(user.id) : user?.phone_number || "";
-  console.log("[AudioRecorder] Using userId:", userId);
+  // console.log("[AudioRecorder] Using userId:", userId);
   
   const { toast } = useToast();
   
@@ -39,14 +39,14 @@ const AudioRecorder: React.FC = () => {
     logs
   } = useVoiceAssistant(userId);
 
-  console.log("[AudioRecorder] Current state:", { isRecording, isConnected, isListening, isPlaying });
+  // console.log("[AudioRecorder] Current state:", { isRecording, isConnected, isListening, isPlaying });
 
   // Helper function to resample audio to 16kHz Int16 PCM
   const resampleTo16kHz = async (
     float32Array: Float32Array,
     fromSampleRate: number
   ): Promise<Int16Array> => {
-    console.log("[AudioRecorder] Resampling audio from", fromSampleRate, "Hz to 16kHz");
+    // console.log("[AudioRecorder] Resampling audio from", fromSampleRate, "Hz to 16kHz");
     
     const offlineCtx = new OfflineAudioContext(1, float32Array.length * (16000 / fromSampleRate), 16000);
     const buffer = offlineCtx.createBuffer(1, float32Array.length, fromSampleRate);
@@ -59,7 +59,7 @@ const AudioRecorder: React.FC = () => {
 
     const rendered = await offlineCtx.startRendering();
     const resampled = rendered.getChannelData(0);
-    console.log("[AudioRecorder] Resampled audio length:", resampled.length);
+    // console.log("[AudioRecorder] Resampled audio length:", resampled.length);
 
     // Convert Float32 to Int16
     const int16 = new Int16Array(resampled.length);
@@ -68,7 +68,7 @@ const AudioRecorder: React.FC = () => {
       int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
     }
     
-    console.log("[AudioRecorder] Converted to Int16 PCM, first few samples:", int16.slice(0, 5));
+    // console.log("[AudioRecorder] Converted to Int16 PCM, first few samples:", int16.slice(0, 5));
     return int16;
   };
 
@@ -95,11 +95,12 @@ const AudioRecorder: React.FC = () => {
     setAudioVisualizationData(visualizationArray);
     animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
   };
+  
 
   const startRecording = async () => {
-    console.log("[AudioRecorder] Starting recording process");
+    // console.log("[AudioRecorder] Starting recording process");
     try {
-      console.log("[AudioRecorder] Requesting microphone access");
+      // console.log("[AudioRecorder] Requesting microphone access");
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -107,22 +108,22 @@ const AudioRecorder: React.FC = () => {
           autoGainControl: true
         } 
       });
-      console.log("[AudioRecorder] Microphone access granted:", stream);
+      // console.log("[AudioRecorder] Microphone access granted:", stream);
       streamRef.current = stream;
       
       // Initialize AudioContext
-      console.log("[AudioRecorder] Creating new AudioContext");
+      // console.log("[AudioRecorder] Creating new AudioContext");
       const audioContext = new AudioContext();
       audioContextRef.current = audioContext;
-      console.log("[AudioRecorder] AudioContext created with sample rate:", audioContext.sampleRate);
+      // console.log("[AudioRecorder] AudioContext created with sample rate:", audioContext.sampleRate);
       
       // Create source from the microphone stream
-      console.log("[AudioRecorder] Creating MediaStreamAudioSourceNode");
+      // console.log("[AudioRecorder] Creating MediaStreamAudioSourceNode");
       const sourceNode = audioContext.createMediaStreamSource(stream);
       sourceNodeRef.current = sourceNode;
       
       // Create an analyzer for visualization
-      console.log("[AudioRecorder] Creating AnalyserNode");
+      // console.log("[AudioRecorder] Creating AnalyserNode");
       const analyzer = audioContext.createAnalyser();
       analyzer.fftSize = 2048;
       analyzer.smoothingTimeConstant = 0.8;
@@ -130,7 +131,7 @@ const AudioRecorder: React.FC = () => {
       sourceNode.connect(analyzer);
       
       // Start visualization
-      animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
+      // animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
       
       // Create ScriptProcessorNode for direct audio processing
       const processorNode = audioContext.createScriptProcessor(4096, 1, 1);
@@ -142,8 +143,9 @@ const AudioRecorder: React.FC = () => {
       
       // Process audio data directly
       processorNode.onaudioprocess = async (event) => {
-        if (!isRecording || !isConnected) return;
-        
+        // console.log("called onAudio")
+        // if (!isRecording || !isConnected) return;
+       
         const inputData = event.inputBuffer.getChannelData(0);
         
         // Clone the data since it's from a live buffer
@@ -153,7 +155,7 @@ const AudioRecorder: React.FC = () => {
         try {
           if (audioContextRef.current) {
             const int16Data = await resampleTo16kHz(audioData, audioContextRef.current.sampleRate);
-            console.log(`[AudioRecorder] Sending audio chunk: ${int16Data.buffer.byteLength} bytes`);
+            // console.log(`[AudioRecorder] Sending audio chunk: ${int16Data.buffer.byteLength} bytes`);
             sendAudioChunk(int16Data.buffer);
           }
         } catch (error) {
@@ -162,11 +164,11 @@ const AudioRecorder: React.FC = () => {
       };
       
       // Also keep MediaRecorder as backup
-      console.log("[AudioRecorder] Creating MediaRecorder");
+      // console.log("[AudioRecorder] Creating MediaRecorder");
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(1000);  // Collect data every second
-      
+      // mediaRecorder.start(1000);  // Collect data every second
+      mediaRecorderRef.current.start()
       setIsRecording(true);
       startListening();
       
@@ -180,6 +182,32 @@ const AudioRecorder: React.FC = () => {
     }
   };
 
+
+  // const mediaRecorder = useRef(null);
+  // const startRecording = async () => {
+  //   try {
+  //     console.log("Starting recording...");
+  //     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  //     mediaRecorder.current = new MediaRecorder(stream);
+  
+  //     mediaRecorder.current.ondataavailable = async (event) => {
+  //       // console.log("Data available:", event.data);
+  //       sendAudioChunk(event.data);
+  //     };
+  
+  //     mediaRecorder.current.start(); // Start recording
+  //     console.log("Recording started");
+  
+  //     // Stop recording after 5 seconds (to trigger `ondataavailable`)
+  //     setTimeout(() => {
+  //       mediaRecorder.current.stop();
+  //       console.log("Recording stopped");
+  //     }, 5000);
+  //   } catch (error) {
+  //     console.error("Error accessing microphone:", error);
+  //   }
+  // };
+  
   const stopRecording = () => {
     console.log("[AudioRecorder] Stopping recording");
     
@@ -234,35 +262,35 @@ const AudioRecorder: React.FC = () => {
   };
 
   // Clean up on component unmount
-  useEffect(() => {
-    console.log("[AudioRecorder] Component mounted");
-    return () => {
-      console.log("[AudioRecorder] Component unmounting, cleaning up resources");
+  // useEffect(() => {
+  //   console.log("[AudioRecorder] Component mounted");
+  //   return () => {
+  //     console.log("[AudioRecorder] Component unmounting, cleaning up resources");
       
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+  //     if (animationFrameRef.current !== null) {
+  //       cancelAnimationFrame(animationFrameRef.current);
+  //     }
       
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
+  //     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+  //       mediaRecorderRef.current.stop();
+  //     }
       
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
-          track.stop();
-        });
-      }
+  //     if (streamRef.current) {
+  //       streamRef.current.getTracks().forEach(track => {
+  //         track.stop();
+  //       });
+  //     }
       
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close()
-          .catch(e => console.error("[AudioRecorder] Error closing AudioContext:", e));
-      }
+  //     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+  //       audioContextRef.current.close()
+  //         .catch(e => console.error("[AudioRecorder] Error closing AudioContext:", e));
+  //     }
       
-      if (isListening) {
-        stopListening();
-      }
-    };
-  }, [isListening, stopListening]);
+  //     if (isListening) {
+  //       stopListening();
+  //     }
+  //   };
+  // }, [isListening, stopListening]);
 
   const toggleRecording = () => {
     console.log("[AudioRecorder] Toggle recording, current state:", isRecording);

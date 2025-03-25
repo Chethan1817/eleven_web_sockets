@@ -11,20 +11,20 @@
 ├── public
 │   ├── favicon.ico
 │   ├── placeholder.svg
-│   └── robots.txt
+│   ├── robots.txt
+│   └── worklets
+│       └── pcm-processor.js
 ├── src
 │   ├── App.css
 │   ├── App.tsx
 │   ├── components
 │   │   ├── AudioRecorder.tsx
+│   │   ├── AudioWaveform.tsx
 │   │   ├── AuthForm.tsx
-│   │   ├── ConnectionStatus.tsx
-│   │   ├── Dashboard.tsx
 │   │   ├── Header.tsx
 │   │   ├── LoginForm.tsx
-│   │   ├── ResponsePlayer.tsx
+│   │   ├── ProtectedRoute.tsx
 │   │   ├── StatusIndicator.tsx
-│   │   ├── TranscriptDisplay.tsx
 │   │   └── ui
 │   │       ├── accordion.tsx
 │   │       ├── alert-dialog.tsx
@@ -78,24 +78,22 @@
 │   ├── config
 │   │   └── index.ts
 │   ├── context
-│   │   ├── AuthContext.tsx
-│   │   └── SessionContext.tsx
+│   │   └── AuthContext.tsx
 │   ├── hooks
 │   │   ├── use-mobile.tsx
-│   │   └── use-toast.ts
+│   │   ├── use-toast.ts
+│   │   └── useVoiceAssistant.ts
 │   ├── index.css
 │   ├── lib
 │   │   └── utils.ts
 │   ├── main.tsx
 │   ├── pages
 │   │   ├── Auth.tsx
-│   │   ├── Index.tsx
+│   │   ├── Home.tsx
 │   │   ├── Login.tsx
 │   │   ├── NotFound.tsx
 │   │   └── OtpVerification.tsx
 │   ├── utils
-│   │   ├── audioUtils.ts
-│   │   └── httpStreamingUtils.ts
 │   └── vite-env.d.ts
 ├── tailwind.config.ts
 ├── tsconfig.app.json
@@ -103,4 +101,4 @@
 ├── tsconfig.node.json
 └── vite.config.ts
 
-11 directories, 93 files
+12 directories, 90 files
