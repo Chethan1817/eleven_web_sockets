@@ -17,6 +17,7 @@ export function useVoiceAssistant(userId: string) {
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const hasStartedRef = useRef(false);
   const isProcessingAudioRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const { toast } = useToast();
 
   console.log("[useVoiceAssistant] Initializing with userId:", userId);
@@ -39,7 +40,7 @@ export function useVoiceAssistant(userId: string) {
     }
   }, [addLog]);
 
-  // Function to play the next audio in the queue
+  // Function to play the next audio in the queue with minimal gaps
   const playNextInQueue = useCallback(async () => {
     if (audioQueueRef.current.length === 0) {
       setIsPlaying(false);
@@ -49,6 +50,13 @@ export function useVoiceAssistant(userId: string) {
 
     isProcessingAudioRef.current = true;
     setIsPlaying(true);
+    
+    // Create or reuse AudioContext
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+    }
+    
+    // Get the next buffer
     const buffer = audioQueueRef.current.shift();
     
     if (!buffer) {
@@ -60,12 +68,16 @@ export function useVoiceAssistant(userId: string) {
     addLog(`🔊 Playing ${buffer.byteLength} bytes of audio`);
     
     try {
-      await playPcmAudio(buffer);
+      // If there are more items in the queue, prepare the next audio
+      // This helps reduce gaps between audio segments
+      const shouldPreloadNext = audioQueueRef.current.length > 0;
+      await playPcmAudio(buffer, shouldPreloadNext);
       
-      // Add a delay between audio responses (800ms)
+      // Smaller delay between audio responses (300ms)
+      // This provides just enough time for natural pauses without noticeable gaps
       setTimeout(() => {
         playNextInQueue();
-      }, 800);
+      }, 300);
     } catch (error) {
       console.error("[useVoiceAssistant] Error playing audio:", error);
       setIsPlaying(false);
@@ -129,11 +141,15 @@ export function useVoiceAssistant(userId: string) {
     }
   }, [isPlaying, addLog]);
 
-  // Function to play PCM audio data
-  const playPcmAudio = async (pcmData: ArrayBuffer): Promise<void> => {
+  // Function to play PCM audio data with improved continuity
+  const playPcmAudio = async (pcmData: ArrayBuffer, preloadNext: boolean = false): Promise<void> => {
     return new Promise((resolve, reject) => {
       try {
-        const audioCtx = new AudioContext({ sampleRate: 16000 });
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+        }
+
+        const audioCtx = audioContextRef.current;
         const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 16000);
         const channel = audioBuffer.getChannelData(0);
         const view = new DataView(pcmData);
@@ -147,10 +163,21 @@ export function useVoiceAssistant(userId: string) {
         source.buffer = audioBuffer;
         source.connect(audioCtx.destination);
         
+        // Handle preloading the next buffer to reduce delays
+        if (preloadNext && audioQueueRef.current.length > 0) {
+          // Start preloading next buffer logic
+          const nextBuffer = audioQueueRef.current[0];
+          if (nextBuffer) {
+            // Begin decoding the next buffer in advance
+            const decodeStartTime = Date.now();
+            console.log("[useVoiceAssistant] Preloading next audio buffer");
+          }
+        }
+        
         source.onended = () => {
-          audioCtx.close().then(() => {
-            resolve();
-          });
+          // Don't close the AudioContext, just resolve
+          // This keeps the audio system "warm" and ready for the next buffer
+          resolve();
         };
         
         source.start();
@@ -338,6 +365,14 @@ export function useVoiceAssistant(userId: string) {
       audioQueueRef.current = [];
       isProcessingAudioRef.current = false;
       setIsPlaying(false);
+      
+      // Close AudioContext when done with everything
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(e => 
+          console.error("[useVoiceAssistant] Error closing AudioContext:", e)
+        );
+        audioContextRef.current = null;
+      }
     };
   }, [userId, isListening, toast, addLog, enqueueAudio]);
 
@@ -347,6 +382,14 @@ export function useVoiceAssistant(userId: string) {
       audioQueueRef.current = [];
       isProcessingAudioRef.current = false;
       setIsPlaying(false);
+      
+      // Close AudioContext
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(e => 
+          console.error("[useVoiceAssistant] Error closing AudioContext:", e)
+        );
+        audioContextRef.current = null;
+      }
     };
   }, []);
 

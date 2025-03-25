@@ -2,7 +2,7 @@
 class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this._chunkSize = 4096; // Process in 4KB chunks
+    this._chunkSize = 2048; // Smaller chunks for faster processing
     this._buffer = new Float32Array(this._chunkSize);
     this._bytesWritten = 0;
   }
