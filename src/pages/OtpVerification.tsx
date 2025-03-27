@@ -18,6 +18,7 @@ const OtpVerification: React.FC = () => {
   const [countryCode, setCountryCode] = useState("");
   const [requestId, setRequestId] = useState("");
   const [isLogin, setIsLogin] = useState(false);
+  const [details,setDetails]=useState(null)
   
   useEffect(() => {
     // Get params from location state
@@ -26,7 +27,9 @@ const OtpVerification: React.FC = () => {
       countryCode: string; 
       requestId: string;
       isLogin?: boolean;
+      name?:string,
     } | null;
+
     
     if (!state || !state.phoneNumber || !state.requestId) {
       toast.error("Missing verification information", {
@@ -40,6 +43,8 @@ const OtpVerification: React.FC = () => {
     setCountryCode(state.countryCode || "91");
     setRequestId(state.requestId);
     setIsLogin(!!state.isLogin);
+    setDetails({name:state.name,country_code:state.countryCode})
+
   }, [location, navigate]);
   
   const handleVerify = async (e: React.FormEvent) => {
@@ -53,7 +58,7 @@ const OtpVerification: React.FC = () => {
     }
     
     try {
-      const success = await verifyOtp(phoneNumber, requestId, otp);
+      const success = await verifyOtp(phoneNumber, requestId, otp,details?.name,details?.country_code);
       if (success) {
         toast.success(isLogin ? "Login successful" : "Registration successful", {
           description: isLogin ? "Welcome back!" : "Your account has been created successfully.",
@@ -70,27 +75,27 @@ const OtpVerification: React.FC = () => {
   };
   
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-background to-secondary">
-      <div className="w-full max-w-md text-center mb-8 animate-slide-down">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 ">
+      {/* <div className="w-full max-w-md text-center mb-8 animate-slide-down">
         <h1 className="text-3xl font-medium mb-2">Verify Your Number</h1>
         <p className="text-muted-foreground">
           Enter the verification code to {isLogin ? "login" : "complete signup"}
         </p>
-      </div>
+      </div> */}
       
       <Card className="w-full max-w-md mx-auto glass-card animate-fade-in">
         <CardHeader>
-          <CardTitle className="text-2xl">Verify OTP</CardTitle>
-          <CardDescription>
-            Enter the verification code sent to +{countryCode} {phoneNumber}
+          <CardTitle className="text-2xl text-center">Verify OTP</CardTitle>
+          <CardDescription className="text-center">
+            Enter the verification code sent to {countryCode} {phoneNumber}
           </CardDescription>
         </CardHeader>
         
         <CardContent>
           <form onSubmit={handleVerify} className="space-y-4">
             <div className="flex items-center justify-center mb-4">
-              <div className="bg-primary/10 rounded-full p-3">
-                <Phone className="h-6 w-6 text-primary" />
+              <div className="bg-gray-200 rounded-full p-3">
+                <Phone className="h-6 w-6 text-black" />
               </div>
             </div>
             

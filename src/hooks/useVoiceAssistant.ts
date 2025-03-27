@@ -207,7 +207,7 @@ export function useVoiceAssistant(userId: string) {
       return;
     }
 
-    const wsUrl = `ws://localhost:8000/ws/audio/?user_id=${userId}`;
+    const wsUrl = `wss://${import.meta.env.VITE_WEBSOCKET_URL}/ws/audio/?user_id=${userId}`;
     addLog(`Connecting to WebSocket: ${wsUrl}`);
     
     try {

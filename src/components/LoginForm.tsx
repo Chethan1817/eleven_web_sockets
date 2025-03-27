@@ -8,13 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Select,SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+// import { SelectContent, SelectItem, SelectTrigger, SelectValue } from "@radix-ui/react-select";
+
 
 const LoginForm: React.FC = () => {
   const navigate = useNavigate();
   const { login, isLoading } = useAuth();
   
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [countryCode, setCountryCode] = useState("91");
+  const [countryCode, setCountryCode] = useState("+61");
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,11 +54,39 @@ const LoginForm: React.FC = () => {
     }
   };
   
+// Common country codes
+const COUNTRY_CODES = [
+  { code: '+1', name: 'United States/Canada' },
+  { code: '+44', name: 'United Kingdom' },
+  { code: '+91', name: 'India' },
+  { code: '+61', name: 'Australia' },
+  { code: '+86', name: 'China' },
+  { code: '+33', name: 'France' },
+  { code: '+49', name: 'Germany' },
+  { code: '+81', name: 'Japan' },
+  { code: '+971', name: 'UAE' },
+  { code: '+65', name: 'Singapore' },
+  { code: '+27', name: 'South Africa' },
+  { code: '+55', name: 'Brazil' },
+  { code: '+52', name: 'Mexico' },
+  { code: '+82', name: 'South Korea' },
+];
+
   return (
-    <Card className="w-full max-w-md mx-auto glass-card animate-fade-in">
+    <Card className="w-full max-w-md mx-auto glass-card animate-fade-in ">
       <CardHeader>
-        <CardTitle className="text-2xl">Login</CardTitle>
-        <CardDescription>
+      {/* <div className="w-full max-w-md text-center mb-4 animate-slide-down ">
+        <h1 className="text-3xl font-medium mb-2">Sara Audio Pipeline Explorer</h1>
+        <p className="text-muted-foreground">
+          Sign in to access your account
+        </p>
+      </div> */}
+      <CardTitle className="text-2xl text-center pb-[10px] ">Sara Audio Pipeline Explorer</CardTitle>
+      {/* <CardTitle className="text-muted-foreground text-center pb-5 text-">
+      Sign in to access your account</CardTitle> */}
+      <hr className=""/>
+        <CardTitle className="text-2xl text-center pt-[10px]">Login</CardTitle>
+        <CardDescription className="text-center">
           Enter your phone number to receive a verification code
         </CardDescription>
       </CardHeader>
@@ -65,14 +96,33 @@ const LoginForm: React.FC = () => {
           <div className="flex space-x-2">
             <div className="w-1/4 space-y-2">
               <Label htmlFor="loginCountryCode">Code</Label>
-              <Input
+              {/* <Input
                 id="loginCountryCode"
                 placeholder="+91"
                 value={countryCode}
                 onChange={(e) => setCountryCode(e.target.value)}
                 required
                 className="bg-white/50 dark:bg-black/50 backdrop-blur-sm"
-              />
+              /> */}
+              {/* <Select>
+                {COUNTRY_CODES.map(val=><SelectContent key={val.code}><SelectItem value={val.code} >{val.code}</SelectItem></SelectContent>)}
+              </Select> */}
+               <Select
+                  defaultValue={"+61"}
+                  onValueChange={(value: string) => setCountryCode(value)}
+                >
+                  <SelectTrigger className="rounded-[12px] ">
+                    <SelectValue placeholder="Select country code" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_CODES.map(country => (
+                      <SelectItem key={country.code} value={country.code}>
+                        {country.code} 
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
             </div>
             
             <div className="flex-1 space-y-2">

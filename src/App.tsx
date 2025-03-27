@@ -15,12 +15,16 @@ import ProtectedRoute from "./components/ProtectedRoute";
 const queryClient = new QueryClient();
 
 const App = () => (
+
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
+      <div className="bg-[url('/background.jpg')] bg-cover bg-center ">
+
         <BrowserRouter>
           <Toaster />
           <Sonner />
+
           <Routes>
             {/* Auth routes */}
             <Route path="/auth" element={<Auth />} />
@@ -38,6 +42,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+        </div>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
