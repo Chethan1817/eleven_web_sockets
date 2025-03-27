@@ -4,10 +4,10 @@
  */
 
 // API base URLs - Use the current origin as default with fallback to localhost
-export const API_BASE_URL = window.location.protocol === 'https:' 
-  ? `${window.location.origin}`  // Use current origin in production
-  : "http://localhost:8000";  // Use localhost in development
-
+// export const API_BASE_URL = window.location.protocol === 'https:' 
+//   ? `${window.location.origin}`  // Use current origin in production
+//   : "http://localhost:8000";  // Use localhost in development
+export const API_BASE_URL =import.meta.env.VITE_API_URL
 // Add debug flag to enable additional logging
 export const DEBUG_MODE = true;
 
@@ -30,7 +30,7 @@ export const ENDPOINTS = {
   
   // WebSocket URL generator function
   AUDIO_WEBSOCKET: (userId: string, sessionId: string) => 
-    `ws://localhost:8000/ws/audio_streaming/receive/?user_id=${userId}&session_id=${sessionId}`,
+    `wss://${import.meta.env.VITE_WEBSOCKET_URL}/ws/audio_streaming/receive/?user_id=${userId}&session_id=${sessionId}`,
   
   // HTTP streaming endpoints
   CREATE_HTTP_SESSION: `${API_BASE_URL}/letta/audio_streaming_session/`,

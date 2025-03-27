@@ -22,19 +22,18 @@ const Login: React.FC = () => {
   }
   
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-background to-secondary">
-      <div className="w-full max-w-md text-center mb-8 animate-slide-down">
-        <h1 className="text-3xl font-medium mb-2">Sara Audio Pipeline Explorer</h1>
-        <p className="text-muted-foreground">
-          Sign in to access your account
-        </p>
-      </div>
+    
+    // <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-background to-secondary">
+
+    <div className="min-h-screen flex flex-col items-center justify-center p-6  ">
+    
       
       <LoginForm />
-      
-      <div className="mt-8 text-xs text-muted-foreground text-center max-w-md animate-fade-in">
+    
+      {/* <div className="mt-8 text-xs text-muted-foreground text-center max-w-md animate-fade-in">
         This is a testing platform for audio streaming, transcription, and response generation.
-      </div>
+      </div> */}
+      
     </div>
   );
 };

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Select,SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 const AuthForm: React.FC = () => {
   const navigate = useNavigate();
@@ -40,10 +41,13 @@ const AuthForm: React.FC = () => {
             phoneNumber,
             countryCode,
             requestId: reqId,
-            isLogin: false
+            isLogin: false,
+            name,
+            
           }
         });
       } else {
+    
         toast.error("Registration Failed", {
           description: "Could not send verification code. Please try again."
         });
@@ -51,16 +55,36 @@ const AuthForm: React.FC = () => {
     } catch (error) {
       console.error("Registration error:", error);
       toast.error("Registration Error", {
-        description: "An error occurred during registration."
+        description: "Could not send verification code. Please try again."
       });
     }
   };
-  
+  // Common country codes
+const COUNTRY_CODES = [
+  { code: '+1', name: 'United States/Canada' },
+  { code: '+44', name: 'United Kingdom' },
+  { code: '+91', name: 'India' },
+  { code: '+61', name: 'Australia' },
+  { code: '+86', name: 'China' },
+  { code: '+33', name: 'France' },
+  { code: '+49', name: 'Germany' },
+  { code: '+81', name: 'Japan' },
+  { code: '+971', name: 'UAE' },
+  { code: '+65', name: 'Singapore' },
+  { code: '+27', name: 'South Africa' },
+  { code: '+55', name: 'Brazil' },
+  { code: '+52', name: 'Mexico' },
+  { code: '+82', name: 'South Korea' },
+];
+
   return (
-    <Card className="w-full max-w-md mx-auto glass-card animate-fade-in">
+    <Card className="w-full max-w-md mx-auto glass-card animate-fade-in ">
       <CardHeader>
-        <CardTitle className="text-2xl">Sign Up</CardTitle>
-        <CardDescription>
+              <CardTitle className="text-2xl text-center pb-[10px] ">Sara Audio Pipeline Explorer</CardTitle>
+        <hr/>
+        <CardTitle className="text-2xl pt-[10px] text-center">
+          Sign Up</CardTitle>
+        <CardDescription className="text-center">
           Enter your details to create an account
         </CardDescription>
       </CardHeader>
@@ -82,14 +106,29 @@ const AuthForm: React.FC = () => {
           <div className="flex space-x-2">
             <div className="w-1/4 space-y-2">
               <Label htmlFor="countryCode">Code</Label>
-              <Input
+              {/* <Input
                 id="countryCode"
                 placeholder="+91"
                 value={countryCode}
                 onChange={(e) => setCountryCode(e.target.value)}
                 required
                 className="bg-white/50 dark:bg-black/50 backdrop-blur-sm"
-              />
+              /> */}
+               <Select
+                  defaultValue={"+61"}
+                  onValueChange={(value: string) => setCountryCode(value)}
+                >
+                  <SelectTrigger className="rounded-[12px] ">
+                    <SelectValue placeholder="Select country code" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_CODES.map(country => (
+                      <SelectItem key={country.code} value={country.code}>
+                        {country.code} 
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
             </div>
             
             <div className="flex-1 space-y-2">
@@ -123,6 +162,11 @@ const AuthForm: React.FC = () => {
             )}
           </Button>
         </form>
+        <div className="mt-4 text-center">
+        <Link to="/login" className=" hover:underline">
+          Already have an account? Login
+        </Link>
+      </div>
       </CardContent>
     </Card>
   );
