@@ -176,14 +176,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         typeOfCountryCode: typeof country_code
       });
       
-      // Add validation to ensure country_code is numeric and use a default if not
-      if (!/^\d+$/.test(country_code)) {
-        console.error(`Invalid country code received: "${country_code}". Using default "91" instead.`);
-        // Use default country code "91" (India) if invalid value is passed
-        country_code = "91";
+      // Remove any + prefix if it exists in country code
+      if (country_code && country_code.startsWith('+')) {
+        country_code = country_code.substring(1);
       }
       
-      console.log("Making API call to verify OTP with corrected parameters:", {
+      // Validate country code is numeric
+      if (!/^\d+$/.test(country_code)) {
+        console.error(`Invalid country code received: "${country_code}"`);
+        throw new Error("Invalid country code format");
+      }
+      
+      console.log("Making API call to verify OTP with validated parameters:", {
         phone_number,
         request_id,
         otp,
