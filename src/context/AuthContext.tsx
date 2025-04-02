@@ -167,6 +167,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
+      // Add validation to ensure country_code is numeric
+      if (!/^\d+$/.test(country_code)) {
+        throw new Error("Invalid country code format");
+      }
+      
       console.log("Making API call to verify OTP");
       
       const response = await fetch(ENDPOINTS.VERIFY_OTP, {
@@ -178,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           phone_number,
           request_id,
           otp,
-          country_code
+          country_code // This is being sent incorrectly somehow
         }),
       });
       
