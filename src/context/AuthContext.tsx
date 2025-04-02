@@ -26,7 +26,7 @@ interface AuthContextType {
   isLoading: boolean;
   register: (name: string, phone_number: string, country_code: string) => Promise<string>;
   login: (phone_number: string, country_code: string) => Promise<string>;
-  verifyOtp: (phone_number: string, request_id: string, otp: string) => Promise<boolean>;
+  verifyOtp: (phone_number: string, request_id: string, otp: string, country_code: string) => Promise<boolean>;
   logout: () => void;
   accessToken: string | null;
   refreshToken: string | null;
@@ -162,8 +162,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const verifyOtp = async (phone_number: string, request_id: string, otp: string): Promise<boolean> => {
-    console.log("Inside verifyOtp function:", { phone_number, request_id, otp });
+  const verifyOtp = async (phone_number: string, request_id: string, otp: string, country_code: string): Promise<boolean> => {
+    console.log("Inside verifyOtp function:", { phone_number, request_id, otp, country_code });
     try {
       setIsLoading(true);
       
@@ -177,7 +177,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({
           phone_number,
           request_id,
-          otp
+          otp,
+          country_code
         }),
       });
       
