@@ -58,7 +58,7 @@ const OtpVerification: React.FC = () => {
     }
     
     try {
-      const success = await verifyOtp(phoneNumber, requestId, otp,details?.name,details?.country_code);
+      const success = await verifyOtp(phoneNumber,details?.country_code, requestId, otp,details?.name);
       if (success) {
         toast.success(isLogin ? "Login successful" : "Registration successful", {
           description: isLogin ? "Welcome back!" : "Your account has been created successfully.",

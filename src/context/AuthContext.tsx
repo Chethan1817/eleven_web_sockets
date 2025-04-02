@@ -26,7 +26,7 @@ interface AuthContextType {
   isLoading: boolean;
   register: (name: string, phone_number: string, country_code: string) => Promise<string>;
   login: (phone_number: string, country_code: string) => Promise<string>;
-  verifyOtp: (phone_number: string, request_id: string, otp: string, country_code: string) => Promise<boolean>;
+  verifyOtp: (phone_number: string, country_code: string, request_id: string, otp: string,name?:string) => Promise<boolean>;
   logout: () => void;
   accessToken: string | null;
   refreshToken: string | null;
@@ -162,37 +162,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const verifyOtp = async (phone_number: string, request_id: string, otp: string, country_code: string): Promise<boolean> => {
-    console.log("Inside verifyOtp function:", { phone_number, request_id, otp, country_code });
+  const verifyOtp = async (phone_number: string,country_code: string, request_id: string, otp: string,name?:string): Promise<boolean> => {
+    console.log("Inside verifyOtp function:", { phone_number,country_code, request_id, otp });
     try {
       setIsLoading(true);
       
-      // Debug what values we're actually receiving
-      console.log("DEBUG - Values received in verifyOtp:", {
-        phone_number,
-        request_id,
-        otp,
-        country_code,
-        typeOfCountryCode: typeof country_code
-      });
-      
-      // Remove any + prefix if it exists in country code
-      if (country_code && country_code.startsWith('+')) {
-        country_code = country_code.substring(1);
-      }
-      
-      // Validate country code is numeric
-      if (!/^\d+$/.test(country_code)) {
-        console.error(`Invalid country code received: "${country_code}"`);
-        throw new Error("Invalid country code format");
-      }
-      
-      console.log("Making API call to verify OTP with validated parameters:", {
-        phone_number,
-        request_id,
-        otp,
-        country_code
-      });
+      console.log("Making API call to verify OTP");
       
       const response = await fetch(ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
@@ -201,9 +176,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         body: JSON.stringify({
           phone_number,
+          country_code,
           request_id,
           otp,
-          country_code
+          name
         }),
       });
       
@@ -254,7 +230,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  
   return (
     <AuthContext.Provider
       value={{
