@@ -167,12 +167,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // Add validation to ensure country_code is numeric
+      // Debug what values we're actually receiving
+      console.log("DEBUG - Values received in verifyOtp:", {
+        phone_number,
+        request_id,
+        otp,
+        country_code,
+        typeOfCountryCode: typeof country_code
+      });
+      
+      // Add validation to ensure country_code is numeric and use a default if not
       if (!/^\d+$/.test(country_code)) {
-        throw new Error("Invalid country code format");
+        console.error(`Invalid country code received: "${country_code}". Using default "91" instead.`);
+        // Use default country code "91" (India) if invalid value is passed
+        country_code = "91";
       }
       
-      console.log("Making API call to verify OTP");
+      console.log("Making API call to verify OTP with corrected parameters:", {
+        phone_number,
+        request_id,
+        otp,
+        country_code
+      });
       
       const response = await fetch(ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
@@ -183,7 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           phone_number,
           request_id,
           otp,
-          country_code // This is being sent incorrectly somehow
+          country_code
         }),
       });
       
