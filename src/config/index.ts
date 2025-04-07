@@ -42,3 +42,69 @@ export const ENDPOINTS = {
   END_AUDIO_SESSION: (sessionId: string) => 
     `${API_BASE_URL}/letta/close_session/`,
 };
+
+export const fetchChatHistory = async (id:number) => {
+  try { 
+    
+    const response = await fetch(`${API_BASE_URL}/letta/conversation-history/?user_id=${id}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body:JSON.stringify({user_id:24})
+     
+    });
+    
+    // console.log("API response status:", response.status);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || "Fetching Chat History failed");
+    }
+    
+    const data = await response.json();
+    // console.log("Chat History response:", data);
+    
+    
+    return data;
+  } catch (error) {
+    console.error("Error in chat history function:", error);
+    const errorMessage = error instanceof Error ? error.message : "fetching chat history failed";
+ 
+    throw error;
+  } 
+};
+
+export const addMessage = async (text:string,user_id:number) => {
+  try { 
+    const response = await fetch(`${API_BASE_URL}/letta/chat/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body:JSON.stringify( {
+              text,
+              user_id
+            },)
+     
+    });
+    
+    // console.log("API response status:", response.status);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || "Fetching Chat History failed");
+    }
+    
+    const data = await response.json();
+    // console.log("Chat History response:", data);
+    
+    
+    return data;
+  } catch (error) {
+    console.error("Error in chat history function:", error);
+    const errorMessage = error instanceof Error ? error.message : "fetching chat history failed";
+ 
+    throw error;
+  } 
+};

@@ -64,7 +64,7 @@ const AudioRecorder: React.FC = () => {
     // Convert Float32 to Int16
     const int16 = new Int16Array(resampled.length);
     for (let i = 0; i < resampled.length; i++) {
-      let s = Math.max(-1, Math.min(1, resampled[i]));
+      const s = Math.max(-1, Math.min(1, resampled[i]));
       int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
     }
     
@@ -153,7 +153,7 @@ const AudioRecorder: React.FC = () => {
         audioData.set(inputData);
         
         try {
-          if (audioContextRef.current) {
+          if (audioContextRef.current&&!isPlaying) {
             const int16Data = await resampleTo16kHz(audioData, audioContextRef.current.sampleRate);
             // console.log(`[AudioRecorder] Sending audio chunk: ${int16Data.buffer.byteLength} bytes`);
             sendAudioChunk(int16Data.buffer);
@@ -223,6 +223,7 @@ const AudioRecorder: React.FC = () => {
         mediaRecorderRef.current.stop();
       }
       mediaRecorderRef.current = null;
+      
     }
     
     // Stop and clean up audio processing
@@ -300,7 +301,13 @@ const AudioRecorder: React.FC = () => {
       stopRecording();
     }
   };
-
+  
+  useEffect(()=>{
+    if(!isConnected){
+    setIsRecording(false);
+    stopListening()
+    }
+  },[isConnected])
   return (
     <div className="flex flex-col items-center">
       <div className="w-full max-w-lg mx-auto">

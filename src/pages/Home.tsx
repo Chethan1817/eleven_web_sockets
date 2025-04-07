@@ -1,14 +1,16 @@
 
-import React from "react";
+import React,{useState} from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AudioRecorder from "@/components/AudioRecorder";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sparkles, UserCircle, LogOut, Info, HelpCircle } from "lucide-react";
+import ChatComponent from "@/components/ChatComponent";
+import WhatsAppChat from "@/components/WhatsAppChat";
 
 const Home: React.FC = () => {
   const { user, logout } = useAuth();
-  
+  const [isRefetch,setIsRefetch]=useState(false)
   return (
     <div className="min-h-screen">
       <div className="container max-w-7xl mx-auto py-8 px-4">
@@ -58,17 +60,19 @@ const Home: React.FC = () => {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="my-6">
-                <AudioRecorder />
+                <AudioRecorder/>
               </div>
             </CardContent>
           </Card>
           <Card className="w-full border border-border/40 shadow-md">
-            <CardHeader className="pb-2">
+          <WhatsAppChat/>
+            {/* <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2">
                 <span>Chat</span>
               </CardTitle>
            
-            </CardHeader>
+            </CardHeader> */}
+
             {/* <CardContent className="pt-0">
               <div className="my-6">
                 <AudioRecorder />
@@ -76,6 +80,9 @@ const Home: React.FC = () => {
             </CardContent> */}
           </Card>
           </div>
+          <Card>
+            <ChatComponent/>
+          </Card>
           
           {/* How to Use Section */}
           <Card className="w-full border border-border/40  shadow-sm">

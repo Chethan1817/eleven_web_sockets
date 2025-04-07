@@ -20,12 +20,12 @@ export function useVoiceAssistant(userId: string) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const { toast } = useToast();
 
-  console.log("[useVoiceAssistant] Initializing with userId:", userId);
-  console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
+  // console.log("[useVoiceAssistant] Initializing with userId:", userId);
+  // console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
 
   // Helper function to log messages
   const addLog = useCallback((message: string) => {
-    console.log(`[useVoiceAssistant] ${message}`);
+    // console.log(`[useVoiceAssistant] ${message}`);
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
   }, []);
 
@@ -53,7 +53,7 @@ export function useVoiceAssistant(userId: string) {
     
     // Create or reuse AudioContext
     if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      audioContextRef.current = new AudioContext({ sampleRate: 44100 });
     }
     
     // Get the next buffer
@@ -146,11 +146,11 @@ export function useVoiceAssistant(userId: string) {
     return new Promise((resolve, reject) => {
       try {
         if (!audioContextRef.current) {
-          audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+          audioContextRef.current = new AudioContext({ sampleRate: 44100 });
         }
 
         const audioCtx = audioContextRef.current;
-        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 16000);
+        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 44100);
         const channel = audioBuffer.getChannelData(0);
         const view = new DataView(pcmData);
 
@@ -170,7 +170,7 @@ export function useVoiceAssistant(userId: string) {
           if (nextBuffer) {
             // Begin decoding the next buffer in advance
             const decodeStartTime = Date.now();
-            console.log("[useVoiceAssistant] Preloading next audio buffer");
+            // console.log("[useVoiceAssistant] Preloading next audio buffer");
           }
         }
         
@@ -190,10 +190,10 @@ export function useVoiceAssistant(userId: string) {
 
   const sendAudioChunk = useCallback((pcmChunk: ArrayBuffer) => {
     if (!socketRef.current) {
-      console.log("[useVoiceAssistant] No socket reference available to send audio");
+      // console.log("[useVoiceAssistant] No socket reference available to send audio");
       return;
     }
-    
+    console.log("test")
     const readyState = socketRef.current.readyState;
     
     if (readyState === WebSocket.OPEN) {
@@ -217,7 +217,7 @@ export function useVoiceAssistant(userId: string) {
         
         // Send the audio data
         socketRef.current.send(pcmChunk);
-        console.log(`[useVoiceAssistant] Sent ${pcmChunk.byteLength} bytes of audio data, volume: ${volume.toFixed(3)}`);
+        // console.log(`[useVoiceAssistant] Sent ${pcmChunk.byteLength} bytes of audio data, volume: ${volume.toFixed(3)}`);
       } catch (error) {
         console.error("[useVoiceAssistant] Error sending audio chunk:", error);
       }
@@ -228,7 +228,7 @@ export function useVoiceAssistant(userId: string) {
 
   useEffect(() => {
     if (!isListening) {
-      console.log("[useVoiceAssistant] Not listening, skipping WebSocket connection");
+      // console.log("[useVoiceAssistant] Not listening, skipping WebSocket connection");
       return;
     }
 
@@ -268,25 +268,25 @@ export function useVoiceAssistant(userId: string) {
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           const byteLength = event.data.byteLength;
-          console.log(`[useVoiceAssistant] Received binary data: ${byteLength} bytes`);
+          // console.log(`[useVoiceAssistant] Received binary data: ${byteLength} bytes`);
           
           // Enqueue audio for playback
           enqueueAudio(event.data);
         } else {
-          console.log("[useVoiceAssistant] Received text message:", event.data);
+          // console.log("[useVoiceAssistant] Received text message:", event.data);
           try {
             const message = JSON.parse(event.data);
             addLog(`📩 ${message.type}: ${message.text || message.status || message.message || JSON.stringify(message)}`);
             
             if (message.type === "error") {
-              console.warn("[useVoiceAssistant] Error message received:", message.message);
+              // console.warn("[useVoiceAssistant] Error message received:", message.message);
               toast({
                 title: "Error",
                 description: message.message,
                 variant: "destructive",
               });
             } else if (message.type === "status") {
-              console.log("[useVoiceAssistant] Status message:", message.status);
+              // console.log("[useVoiceAssistant] Status message:", message.status);
             }
           } catch (e) {
             addLog(`📩 Text: ${event.data}`);
@@ -312,10 +312,10 @@ export function useVoiceAssistant(userId: string) {
         
         if (isListening && !event.wasClean && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          console.log(`[useVoiceAssistant] Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
+          // console.log(`[useVoiceAssistant] Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           setTimeout(() => {
             if (isListening) {
-              console.log("[useVoiceAssistant] Reconnecting...");
+              // console.log("[useVoiceAssistant] Reconnecting...");
             }
           }, 1000);
         } else if (isListening) {
@@ -340,7 +340,7 @@ export function useVoiceAssistant(userId: string) {
     }
 
     return () => {
-      console.log("[useVoiceAssistant] Cleaning up WebSocket connection");
+      // console.log("[useVoiceAssistant] Cleaning up WebSocket connection");
       // Only close the WebSocket if this component is being unmounted and we want to stop listening
       // Otherwise, keep it alive for the next component that will use it
       if (socketRef.current && !isListening) {
