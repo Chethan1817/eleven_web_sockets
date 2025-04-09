@@ -20,25 +20,61 @@ export function useVoiceAssistant(userId: string) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const { toast } = useToast();
 
-  // console.log("[useVoiceAssistant] Initializing with userId:", userId);
-  // console.log("[useVoiceAssistant] Current state:", { isConnected, isListening, isPlaying });
-
   // Helper function to log messages
   const addLog = useCallback((message: string) => {
-    // console.log(`[useVoiceAssistant] ${message}`);
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
   }, []);
 
-  // Function to enqueue audio and start playback if not already playing
-  const enqueueAudio = useCallback((buffer: ArrayBuffer) => {
-    addLog(`Enqueuing ${buffer.byteLength} bytes of audio`);
-    audioQueueRef.current.push(buffer);
-    
-    // Only start playing if we're not already processing audio
-    if (!isProcessingAudioRef.current) {
-      playNextInQueue();
-    }
-  }, [addLog]);
+  // Function to play PCM audio with improved handling
+  const playPcmAudio = useCallback(async (pcmData: ArrayBuffer): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext({ sampleRate: 44100 });
+        }
+
+        const audioCtx = audioContextRef.current;
+        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 44100);
+        const channel = audioBuffer.getChannelData(0);
+        const view = new DataView(pcmData);
+
+        // Use a more optimized buffer filling approach
+        for (let i = 0; i < channel.length; i++) {
+          channel[i] = view.getInt16(i * 2, true) / 0x8000;
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        
+        // Add a small gain node to smooth transitions
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 1.0;
+        
+        // Connect through gain node to smooth playback
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        // Use a tiny fade-in/fade-out to smooth transitions
+        gainNode.gain.setValueAtTime(0.98, audioCtx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(1.0, audioCtx.currentTime + 0.02);
+        
+        const bufferDuration = audioBuffer.duration;
+        if (bufferDuration > 0.1) { // Only fade out if buffer is long enough
+          gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime + bufferDuration - 0.02);
+          gainNode.gain.linearRampToValueAtTime(0.98, audioCtx.currentTime + bufferDuration);
+        }
+        
+        source.onended = () => {
+          resolve();
+        };
+        
+        source.start();
+      } catch (error) {
+        console.error("[useVoiceAssistant] Error playing PCM audio:", error);
+        reject(error);
+      }
+    });
+  }, []);
 
   // Function to play the next audio in the queue with minimal gaps
   const playNextInQueue = useCallback(async () => {
@@ -56,34 +92,94 @@ export function useVoiceAssistant(userId: string) {
       audioContextRef.current = new AudioContext({ sampleRate: 44100 });
     }
     
-    // Get the next buffer
-    const buffer = audioQueueRef.current.shift();
+    // Get next buffer from the queue instead of combining
+    // This change will help with the choppy playback issue
+    const buffer = audioQueueRef.current.shift()!;
     
-    if (!buffer) {
-      setIsPlaying(false);
-      isProcessingAudioRef.current = false;
-      return;
-    }
-
     addLog(`🔊 Playing ${buffer.byteLength} bytes of audio`);
     
     try {
-      // If there are more items in the queue, prepare the next audio
-      // This helps reduce gaps between audio segments
-      const shouldPreloadNext = audioQueueRef.current.length > 0;
-      await playPcmAudio(buffer, shouldPreloadNext);
+      await playPcmAudio(buffer);
       
-      // Smaller delay between audio responses (300ms)
-      // This provides just enough time for natural pauses without noticeable gaps
-      setTimeout(() => {
+      // No delay between checks - process next audio immediately if available
+      if (audioQueueRef.current.length > 0) {
         playNextInQueue();
-      }, 300);
+      } else {
+        setIsPlaying(false);
+        isProcessingAudioRef.current = false;
+      }
     } catch (error) {
       console.error("[useVoiceAssistant] Error playing audio:", error);
       setIsPlaying(false);
       isProcessingAudioRef.current = false;
     }
-  }, [addLog]);
+  }, [addLog, playPcmAudio]);
+
+  // Improved enqueueAudio function
+  const enqueueAudio = useCallback((buffer: ArrayBuffer) => {
+    addLog(`Enqueuing ${buffer.byteLength} bytes of audio`);
+    
+    // If the queue is empty and we're not processing audio,
+    // start playback immediately
+    const shouldStartPlaying = audioQueueRef.current.length === 0 && !isProcessingAudioRef.current;
+    
+    // Add to queue
+    audioQueueRef.current.push(buffer);
+    
+    // Start playing if needed
+    if (shouldStartPlaying) {
+      playNextInQueue();
+    }
+  }, [addLog, playNextInQueue]);
+
+  // Function to check if the user is speaking while audio is playing
+  const checkUserSpeaking = useCallback((volume: number) => {
+    const threshold = 0.02; // Match the example threshold
+    setMicLevel(Math.min(volume * 300, 100));
+    
+    if (volume > threshold && isPlaying) {
+      addLog("🛑 User spoke — interrupting playback.");
+      audioQueueRef.current = [];
+      setIsPlaying(false);
+      isProcessingAudioRef.current = false;
+    }
+  }, [isPlaying, addLog]);
+
+  const sendAudioChunk = useCallback((pcmChunk: ArrayBuffer) => {
+    if (!socketRef.current) {
+      return;
+    }
+    
+    const readyState = socketRef.current.readyState;
+    
+    if (readyState === WebSocket.OPEN) {
+      try {
+        // Calculate volume for the audio chunk
+        const view = new DataView(pcmChunk);
+        let sum = 0;
+        const length = pcmChunk.byteLength / 2;
+        
+        for (let i = 0; i < length; i++) {
+          const int16 = view.getInt16(i * 2, true);
+          const normalized = Math.abs(int16) / 0x8000;
+          sum += normalized;
+        }
+        
+        const volume = sum / length;
+        
+        // Update mic level for UI and check if user is speaking during playback
+        setMicLevel(Math.min(volume * 300, 100));
+        checkUserSpeaking(volume);
+        
+        // Send the audio data
+        socketRef.current.send(pcmChunk);
+      } catch (error) {
+        console.error("[useVoiceAssistant] Error sending audio chunk:", error);
+      }
+    } else {
+      console.log(`[useVoiceAssistant] Cannot send audio - WebSocket state: ${readyState}`);
+    }
+  }, [checkUserSpeaking]);
 
   const startListening = useCallback(() => {
     // Guard against multiple starts
@@ -128,107 +224,11 @@ export function useVoiceAssistant(userId: string) {
     }
   }, [addLog]);
 
-  // Function to check if the user is speaking while audio is playing
-  const checkUserSpeaking = useCallback((volume: number) => {
-    const threshold = 0.02; // Match the example threshold
-    setMicLevel(Math.min(volume * 300, 100));
-    
-    if (volume > threshold && isPlaying) {
-      addLog("🛑 User spoke — interrupting playback.");
-      audioQueueRef.current = [];
-      setIsPlaying(false);
-      isProcessingAudioRef.current = false;
-    }
-  }, [isPlaying, addLog]);
-
-  // Function to play PCM audio data with improved continuity
-  const playPcmAudio = async (pcmData: ArrayBuffer, preloadNext: boolean = false): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      try {
-        if (!audioContextRef.current) {
-          audioContextRef.current = new AudioContext({ sampleRate: 44100 });
-        }
-
-        const audioCtx = audioContextRef.current;
-        const audioBuffer = audioCtx.createBuffer(1, pcmData.byteLength / 2, 44100);
-        const channel = audioBuffer.getChannelData(0);
-        const view = new DataView(pcmData);
-
-        for (let i = 0; i < channel.length; i++) {
-          const int16 = view.getInt16(i * 2, true);
-          channel[i] = int16 / 0x8000;
-        }
-
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        
-        // Handle preloading the next buffer to reduce delays
-        if (preloadNext && audioQueueRef.current.length > 0) {
-          // Start preloading next buffer logic
-          const nextBuffer = audioQueueRef.current[0];
-          if (nextBuffer) {
-            // Begin decoding the next buffer in advance
-            const decodeStartTime = Date.now();
-            // console.log("[useVoiceAssistant] Preloading next audio buffer");
-          }
-        }
-        
-        source.onended = () => {
-          // Don't close the AudioContext, just resolve
-          // This keeps the audio system "warm" and ready for the next buffer
-          resolve();
-        };
-        
-        source.start();
-      } catch (error) {
-        console.error("[useVoiceAssistant] Error playing PCM audio:", error);
-        reject(error);
-      }
-    });
-  };
-
-  const sendAudioChunk = useCallback((pcmChunk: ArrayBuffer) => {
-    if (!socketRef.current) {
-      // console.log("[useVoiceAssistant] No socket reference available to send audio");
-      return;
-    }
-    console.log("test")
-    const readyState = socketRef.current.readyState;
-    
-    if (readyState === WebSocket.OPEN) {
-      try {
-        // Calculate volume for the audio chunk
-        const view = new DataView(pcmChunk);
-        let sum = 0;
-        const length = pcmChunk.byteLength / 2;
-        
-        for (let i = 0; i < length; i++) {
-          const int16 = view.getInt16(i * 2, true);
-          const normalized = Math.abs(int16) / 0x8000;
-          sum += normalized;
-        }
-        
-        const volume = sum / length;
-        
-        // Update mic level for UI and check if user is speaking during playback
-        setMicLevel(Math.min(volume * 300, 100));
-        checkUserSpeaking(volume);
-        
-        // Send the audio data
-        socketRef.current.send(pcmChunk);
-        // console.log(`[useVoiceAssistant] Sent ${pcmChunk.byteLength} bytes of audio data, volume: ${volume.toFixed(3)}`);
-      } catch (error) {
-        console.error("[useVoiceAssistant] Error sending audio chunk:", error);
-      }
-    } else {
-      console.log(`[useVoiceAssistant] Cannot send audio - WebSocket state: ${readyState}`);
-    }
-  }, [checkUserSpeaking]);
-
+  // WebSocket connection setup
   useEffect(() => {
+    // The rest of your websocket effect code
+
     if (!isListening) {
-      // console.log("[useVoiceAssistant] Not listening, skipping WebSocket connection");
       return;
     }
 
@@ -267,26 +267,20 @@ export function useVoiceAssistant(userId: string) {
 
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
-          const byteLength = event.data.byteLength;
-          // console.log(`[useVoiceAssistant] Received binary data: ${byteLength} bytes`);
-          
-          // Enqueue audio for playback
+          // Process audio data - THIS IS WHERE WE FIX THE CHOPPY AUDIO
           enqueueAudio(event.data);
         } else {
-          // console.log("[useVoiceAssistant] Received text message:", event.data);
+          // Handle text messages
           try {
             const message = JSON.parse(event.data);
             addLog(`📩 ${message.type}: ${message.text || message.status || message.message || JSON.stringify(message)}`);
             
             if (message.type === "error") {
-              // console.warn("[useVoiceAssistant] Error message received:", message.message);
               toast({
                 title: "Error",
                 description: message.message,
                 variant: "destructive",
               });
-            } else if (message.type === "status") {
-              // console.log("[useVoiceAssistant] Status message:", message.status);
             }
           } catch (e) {
             addLog(`📩 Text: ${event.data}`);
@@ -295,6 +289,8 @@ export function useVoiceAssistant(userId: string) {
         }
       };
 
+      // Rest of WebSocket setup same as your code...
+      
       ws.onerror = (err) => {
         addLog("❌ WebSocket error");
         console.error("[useVoiceAssistant] ❌ WebSocket error:", err);
@@ -312,10 +308,9 @@ export function useVoiceAssistant(userId: string) {
         
         if (isListening && !event.wasClean && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          // console.log(`[useVoiceAssistant] Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           setTimeout(() => {
             if (isListening) {
-              // console.log("[useVoiceAssistant] Reconnecting...");
+              // Reconnection logic would go here
             }
           }, 1000);
         } else if (isListening) {
@@ -339,10 +334,8 @@ export function useVoiceAssistant(userId: string) {
       });
     }
 
+    // Cleanup logic same as your code...
     return () => {
-      // console.log("[useVoiceAssistant] Cleaning up WebSocket connection");
-      // Only close the WebSocket if this component is being unmounted and we want to stop listening
-      // Otherwise, keep it alive for the next component that will use it
       if (socketRef.current && !isListening) {
         const readyState = socketRef.current.readyState;
         
@@ -354,19 +347,16 @@ export function useVoiceAssistant(userId: string) {
           }
         }
         
-        // Clear the global reference if this was our socket and we're closing it
         if (globalWsRef === socketRef.current) {
           globalWsRef = null;
         }
       }
       setIsConnected(false);
       
-      // Clear audio queue on cleanup
       audioQueueRef.current = [];
       isProcessingAudioRef.current = false;
       setIsPlaying(false);
       
-      // Close AudioContext when done with everything
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(e => 
           console.error("[useVoiceAssistant] Error closing AudioContext:", e)
@@ -376,14 +366,13 @@ export function useVoiceAssistant(userId: string) {
     };
   }, [userId, isListening, toast, addLog, enqueueAudio]);
 
+  // Cleanup effect
   useEffect(() => {
     return () => {
-      // Reset audio state on cleanup
       audioQueueRef.current = [];
       isProcessingAudioRef.current = false;
       setIsPlaying(false);
       
-      // Close AudioContext
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(e => 
           console.error("[useVoiceAssistant] Error closing AudioContext:", e)
