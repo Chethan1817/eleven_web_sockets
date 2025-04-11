@@ -47,12 +47,10 @@ export const fetchChatHistory = async (id:number) => {
   try { 
     
     const response = await fetch(`${API_BASE_URL}/letta/conversation-history/?user_id=${id}`, {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-      },
-      body:JSON.stringify({user_id:24})
-     
+      },     
     });
     
     // console.log("API response status:", response.status);
@@ -65,7 +63,7 @@ export const fetchChatHistory = async (id:number) => {
     const data = await response.json();
     // console.log("Chat History response:", data);
     
-    
+    https://clymin.ngrok.dev 
     return data;
   } catch (error) {
     console.error("Error in chat history function:", error);

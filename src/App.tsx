@@ -8,7 +8,7 @@ import { AuthProvider } from "./context/AuthContext";
 import Auth from "./pages/Auth";
 import Login from "./pages/Login";
 import OtpVerification from "./pages/OtpVerification";
-import Home from "./pages/Home";
+import Home from "./pages/ElevenLabsHome";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 

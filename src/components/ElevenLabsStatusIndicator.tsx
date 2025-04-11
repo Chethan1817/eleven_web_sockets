@@ -1,20 +1,16 @@
-
 import React from "react";
-import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
+import { useElevenLabsVoiceAssistant } from "@/hooks/useElevenLabsVoiceAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { Mic, Volume2, Wifi } from "lucide-react";
 
 // Create a wrapper component to manage the hook instance
-const StatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
-  const { isConnected, isListening, isPlaying, micLevel } = useVoiceAssistant(userId);
-  console.log("[StatusIndicator] Current state:", { isConnected, isListening, isPlaying, micLevel });
-
+const ElevenLabsStatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
+  const { isConnected, isListening, isPlaying, micLevel } = useElevenLabsVoiceAssistant(userId);
+  
   if (!isConnected && !isListening) {
-    console.log("[StatusIndicator] Not connected or listening, not rendering");
     return null;
   }
 
-  console.log("[StatusIndicator] Rendering status indicator");
   return (
     <div className="flex items-center justify-center space-x-2 p-2 bg-secondary/60 backdrop-blur-md rounded-full mb-4 shadow-sm w-full max-w-sm mx-auto">
       <div className="flex items-center">
@@ -22,7 +18,7 @@ const StatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
           className={`h-3 w-3 mr-1 ${isConnected ? "text-green-500" : "text-amber-500 animate-pulse"}`} 
         />
         <span className="text-xs text-muted-foreground">
-          {isConnected ? "Connected" : "Connecting..."}
+          {isConnected ? "Connected to ElevenLabs" : "Connecting..."}
         </span>
       </div>
       
@@ -30,7 +26,7 @@ const StatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
         <div className="flex items-center">
           <Volume2 className="h-3 w-3 text-blue-500 animate-pulse mr-1" />
           <span className="text-xs text-muted-foreground">
-            Playing
+            Assistant Speaking
           </span>
         </div>
       )}
@@ -57,17 +53,15 @@ const StatusIndicatorContent: React.FC<{ userId: string }> = ({ userId }) => {
 };
 
 // Main component that manages whether to render the content
-const StatusIndicator: React.FC = () => {
+const ElevenLabsStatusIndicator: React.FC = () => {
   const { user } = useAuth();
-  console.log("[StatusIndicator] User data:", user);
   const userId = user?.id ? String(user.id) : user?.phone_number || "";
-  console.log("[StatusIndicator] Using userId:", userId);
   
   if (!userId) {
     return null;
   }
 
-  return <StatusIndicatorContent userId={userId} />;
+  return <ElevenLabsStatusIndicatorContent userId={userId} />;
 };
 
-export default StatusIndicator;
+export default ElevenLabsStatusIndicator;

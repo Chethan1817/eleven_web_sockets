@@ -3,7 +3,7 @@ import React from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import StatusIndicator from "./StatusIndicator";
+import StatusIndicator from "./ElevenLabsStatusIndicator";
 import { LogOut } from "lucide-react";
 
 const Header: React.FC = () => {
